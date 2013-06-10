@@ -1,7 +1,7 @@
 AC_PREREQ([2.66])
 
 AC_INIT([dleyna-connector-dbus],
-	[0.0.1],
+	[0.1.0],
 	[https://github.com/01org/dleyna-connector-dbus/issues/new],
 	,
 	[https://01.org/dleyna/])
@@ -138,7 +138,9 @@ AC_ARG_WITH(log-level,
 
 DLEYNA_LOG_LEVEL_CHECK([${with_log_level}])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile	\
+		dleyna-connector-dbus-1.0.pc
+		])
 
 AC_OUTPUT
 

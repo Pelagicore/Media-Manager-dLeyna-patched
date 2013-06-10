@@ -15,6 +15,7 @@
 
 @SET_MAKE@
 
+
 VPATH = @srcdir@
 am__make_dryrun = \
   { \
@@ -54,6 +55,7 @@ host_triplet = @host@
 subdir = .
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in $(srcdir)/config.h.in \
+	$(srcdir)/dleyna-connector-dbus-1.0.pc.in \
 	$(top_srcdir)/configure AUTHORS COPYING ChangeLog INSTALL NEWS \
 	build-aux/compile build-aux/config.guess build-aux/config.sub \
 	build-aux/depcomp build-aux/install-sh build-aux/ltmain.sh \
@@ -70,7 +72,7 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = config.h
-CONFIG_CLEAN_FILES =
+CONFIG_CLEAN_FILES = dleyna-connector-dbus-1.0.pc
 CONFIG_CLEAN_VPATH_FILES =
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -99,7 +101,8 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-am__installdirs = "$(DESTDIR)$(connectordir)"
+am__installdirs = "$(DESTDIR)$(connectordir)" \
+	"$(DESTDIR)$(pkgconfigdir)"
 LTLIBRARIES = $(connector_LTLIBRARIES)
 am__DEPENDENCIES_1 =
 libdleyna_connector_dbus_la_DEPENDENCIES = $(am__DEPENDENCIES_1) \
@@ -148,6 +151,7 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
+DATA = $(pkgconfig_DATA)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -318,6 +322,10 @@ MAINTAINERCLEANFILES = Makefile.in		\
 			build-aux/missing	\
 			build-aux/install-sh
 
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = dleyna-connector-dbus-1.0.pc
+CLEANFILES = $(pkgconfig_DATA)
+DISTCLEANFILES = $(pkgconfig_DATA)
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -372,6 +380,8 @@ $(srcdir)/config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 
 distclean-hdr:
 	-rm -f config.h stamp-h1
+dleyna-connector-dbus-1.0.pc: $(top_builddir)/config.status $(srcdir)/dleyna-connector-dbus-1.0.pc.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
 install-connectorLTLIBRARIES: $(connector_LTLIBRARIES)
 	@$(NORMAL_INSTALL)
 	@list='$(connector_LTLIBRARIES)'; test -n "$(connectordir)" || list=; \
@@ -458,6 +468,27 @@ clean-libtool:
 
 distclean-libtool:
 	-rm -f libtool config.lt
+install-pkgconfigDATA: $(pkgconfig_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(pkgconfigdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(pkgconfigdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(pkgconfigdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(pkgconfigdir)" || exit $$?; \
+	done
+
+uninstall-pkgconfigDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(pkgconfigdir)'; $(am__uninstall_files_from_dir)
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
@@ -675,9 +706,9 @@ distcleancheck: distclean
 	       exit 1; } >&2
 check-am: all-am
 check: check-am
-all-am: Makefile $(LTLIBRARIES) config.h
+all-am: Makefile $(LTLIBRARIES) $(DATA) config.h
 installdirs:
-	for dir in "$(DESTDIR)$(connectordir)"; do \
+	for dir in "$(DESTDIR)$(connectordir)" "$(DESTDIR)$(pkgconfigdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -702,12 +733,14 @@ install-strip:
 mostlyclean-generic:
 
 clean-generic:
+	-test -z "$(CLEANFILES)" || rm -f $(CLEANFILES)
 
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
 	-test . = "$(srcdir)" || test -z "$(CONFIG_CLEAN_VPATH_FILES)" || rm -f $(CONFIG_CLEAN_VPATH_FILES)
 	-rm -f src/$(DEPDIR)/$(am__dirstamp)
 	-rm -f src/$(am__dirstamp)
+	-test -z "$(DISTCLEANFILES)" || rm -f $(DISTCLEANFILES)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -737,7 +770,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-connectorLTLIBRARIES
+install-data-am: install-connectorLTLIBRARIES install-pkgconfigDATA
 
 install-dvi: install-dvi-am
 
@@ -786,7 +819,7 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-connectorLTLIBRARIES
+uninstall-am: uninstall-connectorLTLIBRARIES uninstall-pkgconfigDATA
 
 .MAKE: all install-am install-strip
 
@@ -801,12 +834,12 @@ uninstall-am: uninstall-connectorLTLIBRARIES
 	install-data-am install-dvi install-dvi-am install-exec \
 	install-exec-am install-html install-html-am install-info \
 	install-info-am install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
+	install-pkgconfigDATA install-ps install-ps-am install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic maintainer-clean-local mostlyclean \
 	mostlyclean-compile mostlyclean-generic mostlyclean-libtool \
 	pdf pdf-am ps ps-am tags uninstall uninstall-am \
-	uninstall-connectorLTLIBRARIES
+	uninstall-connectorLTLIBRARIES uninstall-pkgconfigDATA
 
 
 maintainer-clean-local:

@@ -11,16 +11,15 @@ TODO
 Working with the source code repository
 ---------------------------------------
 
-dleyna-server can be downloaded, compiled and installed as
+dleyna-renderer can be downloaded, compiled and installed as
 follows:
 
    Clone repository
-     # git clone git://github.com/01org/dleyna-server.git
+     # git clone git://github.com/01org/dleyna-renderer.git
      # cd dleyna-server
 
    Configure and build
-     # ./autoreconf -i
-     # ./configure
+     # ./autogen.sh
      # make
 
    Final installation
@@ -88,3 +87,11 @@ Set the IPC mechanism to be used.
 
 This option is disabled by default. To enable use --enable-lib-only.
 When enabled, only the libdleyna-renderer library is built.
+
+--with-ua-prefix
+
+This option allows a prefix to be added to the SOUP session user agent.
+For example, --with-ua-prefix=MyPrefix can be used to change a default user
+agent string from "dLeyna/0.0.1 GUPnP/0.19.4 DLNADOC/1.50" to
+"MyPrefix dLeyna/0.0.1 GUPnP/0.19.4 DLNADOC/1.50".
+

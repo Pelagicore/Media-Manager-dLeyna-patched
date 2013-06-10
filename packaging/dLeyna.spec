@@ -7,14 +7,14 @@
 
 Name:       dleyna
 Summary:    dLeyna hosts a number of DLNA middleware components
-Version:    0.0.1
+Version:    0.2.0
 Release:    0
 Group:      System/Libraries
 License:    LGPLv2+
 URL:        https://01.org/dleyna/
 Source0:    %{name}-%{version}.tar.gz
 Requires:   dbus
-Requires:   libsoup2.4
+Requires:   libsoup
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 BuildRequires:  pkgconfig(dbus-1)
@@ -102,6 +102,7 @@ rm -rf %{buildroot}
 %{_libdir}/libdleyna-core-1.0.so
 %{_libdir}/libdleyna-server-1.0.so
 %{_libdir}/libdleyna-renderer-1.0.so
+%{_libdir}/pkgconfig/dleyna-connector-dbus-1.0.pc
 %{_libdir}/pkgconfig/dleyna-core-1.0.pc
 %{_libdir}/pkgconfig/dleyna-server-1.0.pc
 %{_libdir}/pkgconfig/dleyna-renderer-1.0.pc

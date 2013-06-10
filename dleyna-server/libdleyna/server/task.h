@@ -34,6 +34,7 @@
 enum dls_task_type_t_ {
 	DLS_TASK_GET_VERSION,
 	DLS_TASK_GET_SERVERS,
+	DLS_TASK_RESCAN,
 	DLS_TASK_GET_CHILDREN,
 	DLS_TASK_GET_ALL_PROPS,
 	DLS_TASK_GET_PROP,
@@ -50,8 +51,9 @@ enum dls_task_type_t_ {
 	DLS_TASK_CREATE_CONTAINER,
 	DLS_TASK_CREATE_CONTAINER_IN_ANY,
 	DLS_TASK_UPDATE_OBJECT,
-	DLS_TASK_CREATE_PLAYLIST,
-	DLS_TASK_CREATE_PLAYLIST_IN_ANY
+	DLS_TASK_GET_OBJECT_METADATA,
+	DLS_TASK_CREATE_REFERENCE,
+	DLS_TASK_GET_ICON
 };
 typedef enum dls_task_type_t_ dls_task_type_t;
 
@@ -128,13 +130,9 @@ struct dls_task_update_t_ {
 	GVariant *to_delete;
 };
 
-typedef struct dls_task_create_playlist_t_ dls_task_create_playlist_t;
-struct dls_task_create_playlist_t_ {
-	gchar *title;
-	gchar *creator;
-	gchar *genre;
-	gchar *desc;
-	GVariant *item_path;
+typedef struct dls_task_create_reference_t_ dls_task_create_reference_t;
+struct dls_task_create_reference_t_ {
+	gchar *item_path;
 };
 
 typedef struct dls_task_target_info_t_ dls_task_target_info_t;
@@ -143,6 +141,12 @@ struct dls_task_target_info_t_ {
 	gchar *root_path;
 	gchar *id;
 	dls_device_t *device;
+};
+
+typedef struct dls_task_get_icon_t_ dls_task_get_icon_t;
+struct dls_task_get_icon_t_ {
+	gchar *mime_type;
+	gchar *resolution;
 };
 
 typedef struct dls_task_t_ dls_task_t;
@@ -167,9 +171,12 @@ struct dls_task_t_ {
 		dls_task_upload_action_t upload_action;
 		dls_task_create_container_t create_container;
 		dls_task_update_t update;
-		dls_task_create_playlist_t playlist;
+		dls_task_create_reference_t create_reference;
+		dls_task_get_icon_t get_icon;
 	} ut;
 };
+
+dls_task_t *dls_task_rescan_new(dleyna_connector_msg_id_t invocation);
 
 dls_task_t *dls_task_get_version_new(dleyna_connector_msg_id_t invocation);
 
@@ -246,15 +253,23 @@ dls_task_t *dls_task_create_container_new_generic(
 					GVariant *parameters,
 					GError **error);
 
-dls_task_t *dls_task_create_playlist_new(dleyna_connector_msg_id_t invocation,
-					 dls_task_type_t type,
-					 const gchar *path,
-					 GVariant *parameters,
-					 GError **error);
+dls_task_t *dls_task_create_reference_new(dleyna_connector_msg_id_t invocation,
+					  dls_task_type_t type,
+					  const gchar *path,
+					  GVariant *parameters,
+					  GError **error);
 
 dls_task_t *dls_task_update_new(dleyna_connector_msg_id_t invocation,
 				const gchar *path, GVariant *parameters,
 				GError **error);
+
+dls_task_t *dls_task_get_metadata_new(dleyna_connector_msg_id_t invocation,
+				      const gchar *path,
+				      GError **error);
+
+dls_task_t *dls_task_get_icon_new(dleyna_connector_msg_id_t invocation,
+				  const gchar *path, GVariant *parameters,
+				  GError **error);
 
 void dls_task_cancel(dls_task_t *task);
 

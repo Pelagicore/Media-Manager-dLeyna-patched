@@ -41,6 +41,13 @@ struct dls_device_context_t_ {
 	guint timeout_id;
 };
 
+typedef struct dls_device_icon_t_ dls_device_icon_t;
+struct dls_device_icon_t_ {
+	gchar *mime_type;
+	guchar *bytes;
+	gsize size;
+};
+
 struct dls_device_t_ {
 	dleyna_connector_id_t connection;
 	guint id;
@@ -56,6 +63,8 @@ struct dls_device_t_ {
 	GVariant *sort_ext_caps;
 	GVariant *feature_list;
 	gboolean shutting_down;
+	guint construct_step;
+	dls_device_icon_t icon;
 };
 
 dls_device_context_t *dls_device_append_new_context(dls_device_t *device,
@@ -64,6 +73,14 @@ dls_device_context_t *dls_device_append_new_context(dls_device_t *device,
 void dls_device_delete(void *device);
 
 void dls_device_unsubscribe(void *device);
+
+void dls_device_construct(
+			dls_device_t *dev,
+			dls_device_context_t *context,
+			dleyna_connector_id_t connection,
+			const dleyna_connector_dispatch_cb_t *dispatch_table,
+			GHashTable *property_map,
+			const dleyna_task_queue_key_t *queue_id);
 
 dls_device_t *dls_device_new(
 			dleyna_connector_id_t connection,
@@ -122,8 +139,14 @@ void dls_device_update_object(dls_client_t *client,
 			      dls_task_t *task,
 			      const gchar *upnp_filter);
 
-void dls_device_playlist_upload(dls_client_t *client,
-				dls_task_t *task,
-				const gchar *parent_id);
+void dls_device_get_object_metadata(dls_client_t *client,
+				    dls_task_t *task,
+				    const gchar *parent_id);
+
+void dls_device_create_reference(dls_client_t *client,
+				 dls_task_t *task);
+
+void dls_device_get_icon(dls_client_t *client,
+			 dls_task_t *task);
 
 #endif /* DLS_DEVICE_H__ */

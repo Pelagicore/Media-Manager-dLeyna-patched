@@ -24,6 +24,17 @@
 
 #include "async.h"
 
+dls_task_t *dls_task_rescan_new(dleyna_connector_msg_id_t invocation)
+{
+	dls_task_t *task = g_new0(dls_task_t, 1);
+
+	task->type = DLS_TASK_RESCAN;
+	task->invocation = invocation;
+	task->synchronous = TRUE;
+
+	return task;
+}
+
 dls_task_t *dls_task_get_version_new(dleyna_connector_msg_id_t invocation)
 {
 	dls_task_t *task = g_new0(dls_task_t, 1);
@@ -91,7 +102,8 @@ static void prv_delete(dls_task_t *task)
 	case DLS_TASK_CREATE_CONTAINER_IN_ANY:
 		g_free(task->ut.create_container.display_name);
 		g_free(task->ut.create_container.type);
-		g_variant_unref(task->ut.create_container.child_types);
+		if (task->ut.create_container.child_types)
+			g_variant_unref(task->ut.create_container.child_types);
 		break;
 	case DLS_TASK_UPDATE_OBJECT:
 		if (task->ut.update.to_add_update)
@@ -99,14 +111,12 @@ static void prv_delete(dls_task_t *task)
 		if (task->ut.update.to_delete)
 			g_variant_unref(task->ut.update.to_delete);
 		break;
-	case DLS_TASK_CREATE_PLAYLIST:
-	case DLS_TASK_CREATE_PLAYLIST_IN_ANY:
-		g_free(task->ut.playlist.title);
-		g_free(task->ut.playlist.creator);
-		g_free(task->ut.playlist.genre);
-		g_free(task->ut.playlist.desc);
-		if (task->ut.playlist.item_path)
-			g_variant_unref(task->ut.playlist.item_path);
+	case DLS_TASK_CREATE_REFERENCE:
+		g_free(task->ut.create_reference.item_path);
+		break;
+	case DLS_TASK_GET_ICON:
+		g_free(task->ut.get_icon.resolution);
+		g_free(task->ut.get_icon.mime_type);
 		break;
 	default:
 		break;
@@ -419,10 +429,6 @@ dls_task_t *dls_task_get_upload_ids_new(dleyna_connector_msg_id_t invocation,
 
 	task = prv_m2spec_task_new(DLS_TASK_GET_UPLOAD_IDS, invocation, path,
 				   "(@au)", error, TRUE);
-	if (!task)
-		goto finished;
-
-finished:
 
 	return task;
 }
@@ -482,32 +488,25 @@ finished:
 	return task;
 }
 
-dls_task_t *dls_task_create_playlist_new(dleyna_connector_msg_id_t invocation,
-					 dls_task_type_t type,
-					 const gchar *path,
-					 GVariant *parameters,
-					 GError **error)
+dls_task_t *dls_task_create_reference_new(dleyna_connector_msg_id_t invocation,
+					  dls_task_type_t type,
+					  const gchar *path,
+					  GVariant *parameters,
+					  GError **error)
 {
 	dls_task_t *task;
 
 	task = prv_m2spec_task_new(type, invocation, path,
-				   "(uo)", error, FALSE);
+				   "(@o)", error, FALSE);
 	if (!task)
 		goto finished;
 
-	g_variant_get(parameters, "(ssss@ao)",
-		      &task->ut.playlist.title,
-		      &task->ut.playlist.creator,
-		      &task->ut.playlist.genre,
-		      &task->ut.playlist.desc,
-		      &task->ut.playlist.item_path);
-
-	task->multiple_retvals = TRUE;
+	g_variant_get(parameters, "(o)", &task->ut.create_reference.item_path);
+	(void) g_strstrip(task->ut.create_reference.item_path);
 
 finished:
 
 	return task;
-
 }
 
 dls_task_t *dls_task_update_new(dleyna_connector_msg_id_t invocation,
@@ -524,6 +523,38 @@ dls_task_t *dls_task_update_new(dleyna_connector_msg_id_t invocation,
 	g_variant_get(parameters, "(@a{sv}@as)",
 		      &task->ut.update.to_add_update,
 		      &task->ut.update.to_delete);
+
+finished:
+
+	return task;
+}
+
+dls_task_t *dls_task_get_metadata_new(dleyna_connector_msg_id_t invocation,
+				const gchar *path, GError **error)
+{
+	dls_task_t *task;
+
+	task = prv_m2spec_task_new(DLS_TASK_GET_OBJECT_METADATA, invocation,
+				   path, "(@s)", error, FALSE);
+
+	return task;
+}
+
+dls_task_t *dls_task_get_icon_new(dleyna_connector_msg_id_t invocation,
+				  const gchar *path, GVariant *parameters,
+				  GError **error)
+{
+	dls_task_t *task;
+
+	task = prv_m2spec_task_new(DLS_TASK_GET_ICON, invocation, path,
+				   "(@ays)", error, FALSE);
+	if (!task)
+		goto finished;
+
+	task->multiple_retvals = TRUE;
+
+	g_variant_get(parameters, "(ss)", &task->ut.get_icon.mime_type,
+		      &task->ut.get_icon.resolution);
 
 finished:
 

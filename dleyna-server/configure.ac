@@ -1,7 +1,7 @@
 AC_PREREQ([2.66])
 
 AC_INIT([dleyna-server],
-	[0.0.1],
+	[0.2.0],
 	[https://github.com/01org/dleyna-server/issues/new],
 	,
 	[https://01.org/dleyna/])
@@ -39,7 +39,7 @@ PKG_PROG_PKG_CONFIG(0.16)
 PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.28])
 PKG_CHECK_MODULES([GIO], [gio-2.0 >= 2.28])
 PKG_CHECK_MODULES([GSSDP], [gssdp-1.0 >= 0.13.2])
-PKG_CHECK_MODULES([GUPNP], [gupnp-1.0 >= 0.19.1])
+PKG_CHECK_MODULES([GUPNP], [gupnp-1.0 >= 0.20.3])
 PKG_CHECK_MODULES([GUPNPAV], [gupnp-av-1.0 >= 0.11.5])
 PKG_CHECK_MODULES([GUPNPDLNA], [gupnp-dlna-2.0 >= 0.9.4])
 PKG_CHECK_MODULES([SOUP], [libsoup-2.4 >= 2.28.2])
@@ -184,8 +184,13 @@ AC_ARG_WITH(ua-prefix,
 			[Specify a user agent prefix]),
 		[with_ua_prefix = "$withval"; AC_DEFINE_UNQUOTED([UA_PREFIX], "$with_ua_prefix", [User Agent prefix])],
 		[])
-		
-		
+
+AC_ARG_WITH(dbus_service_dir,
+            AS_HELP_STRING([--with-dbus-service-dir=PATH],[choose directory for dbus service files, [default=PREFIX/share/dbus-1/services]]),
+            with_dbus_service_dir="$withval", with_dbus_service_dir=$datadir/dbus-1/services)
+DBUS_SERVICE_DIR=$with_dbus_service_dir
+AC_SUBST(DBUS_SERVICE_DIR)
+
 
 AC_ARG_ENABLE(lib-only,
 		AS_HELP_STRING(
@@ -194,15 +199,7 @@ AC_ARG_ENABLE(lib-only,
 		[],
 		[enable_lib_only=no])
 
-AS_IF([test "x$[]enable_lib_only" = "xno"],
-      [PKG_CHECK_MODULES([DBUS], [dbus-1],
-			 [DBUS_SESSION_DIR=`$PKG_CONFIG --variable=session_bus_services_dir dbus-1`;
-			  AC_SUBST(DBUS_SESSION_DIR)
-			 ],
-			 [enable_lib_only=yes])
-      ])
-
-AM_CONDITIONAL([BUILD_SERVER], [test "x$[]enable_lib_only" = "xno"])
+AM_CONDITIONAL([BUILD_SERVER], [test "x$enable_lib_only" = "xno"])
 
 AC_DEFINE([DLEYNA_SERVER_OBJECT], "/com/intel/dLeynaServer", [Name of object exposed by dleyna-server])
 AC_DEFINE([DLEYNA_SERVER_PATH], "/com/intel/dLeynaServer/server", [Path of server objects])
@@ -231,7 +228,6 @@ AC_CONFIG_FILES([Makefile					\
 		 libdleyna/server/Makefile			\
 		 libdleyna/server/dleyna-server-1.0.pc		\
 		 libdleyna/server/dleyna-server-service.conf	\
-		 server/com.intel.dleyna-server.service		\
 		 server/dleyna-server-service-1.0.pc		\
 		 server/Makefile				\
 		 test/dbus/Makefile
@@ -248,14 +244,15 @@ Compiler  : '${CC}'
 CFLAGS    : '${CFLAGS}'
 
 -Package features:
-	- enable-werror       : ${enable_werror}
-	- enable-debug        : ${enable_debug}
-	- enable-never-quit   : ${enable_never_quit}
-	- with_connector-name : ${with_connector_name}
-	- disable-optimization: ${disable_optimization}
-	- with-log-level      : ${with_log_level}
-	- with-log-type       : ${with_log_type}
-	- with-ua-prefix      : ${with_ua_prefix}
-	- enable-lib-only     : ${enable_lib_only}
+	- enable-werror         : ${enable_werror}
+	- enable-debug          : ${enable_debug}
+	- enable-never-quit     : ${enable_never_quit}
+	- with_connector-name   : ${with_connector_name}
+	- disable-optimization  : ${disable_optimization}
+	- with-log-level        : ${with_log_level}
+	- with-log-type         : ${with_log_type}
+	- with-ua-prefix        : ${with_ua_prefix}
+	- enable-lib-only       : ${enable_lib_only}
+	- with-dbus-service-dir : ${with_dbus_service_dir}
 
 --------------------------------------------------"])

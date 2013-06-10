@@ -50,21 +50,23 @@
 #endif
 
 #define DLR_INTERFACE_GET_VERSION "GetVersion"
-#define DLR_INTERFACE_GET_SERVERS "GetServers"
+#define DLR_INTERFACE_GET_RENDERERS "GetRenderers"
+#define DLR_INTERFACE_RESCAN "Rescan"
 #define DLR_INTERFACE_RELEASE "Release"
 
-#define DLR_INTERFACE_FOUND_SERVER "FoundServer"
-#define DLR_INTERFACE_LOST_SERVER "LostServer"
+#define DLR_INTERFACE_FOUND_RENDERER "FoundRenderer"
+#define DLR_INTERFACE_LOST_RENDERER "LostRenderer"
 
 #define DLR_INTERFACE_HOST_FILE "HostFile"
 #define DLR_INTERFACE_REMOVE_FILE "RemoveFile"
 
 #define DLR_INTERFACE_VERSION "Version"
-#define DLR_INTERFACE_SERVERS "Servers"
+#define DLR_INTERFACE_RENDERERS "Renderers"
 
 #define DLR_INTERFACE_PATH "Path"
 #define DLR_INTERFACE_URI "Uri"
 #define DLR_INTERFACE_ID "Id"
+#define DLR_INTERFACE_METADATA "Metadata"
 
 #define DLR_INTERFACE_CHANGED_PROPERTIES "changed_properties"
 #define DLR_INTERFACE_INVALIDATED_PROPERTIES "invalidated_properties"
@@ -89,11 +91,17 @@
 #define DLR_INTERFACE_PAUSE "Pause"
 #define DLR_INTERFACE_STOP "Stop"
 #define DLR_INTERFACE_OPEN_URI "OpenUri"
+#define DLR_INTERFACE_OPEN_URI_EX "OpenUriEx"
 #define DLR_INTERFACE_SEEK "Seek"
 #define DLR_INTERFACE_SET_POSITION "SetPosition"
 #define DLR_INTERFACE_GOTO_TRACK "GotoTrack"
 
 #define DLR_INTERFACE_CANCEL "Cancel"
+#define DLR_INTERFACE_GET_ICON "GetIcon"
+#define DLR_INTERFACE_RESOLUTION "Resolution"
+#define DLR_INTERFACE_ICON_BYTES "Bytes"
+#define DLR_INTERFACE_MIME_TYPE "MimeType"
+#define DLR_INTERFACE_REQ_MIME_TYPE "RequestedMimeType"
 
 typedef struct dlr_context_t_ dlr_context_t;
 struct dlr_context_t_ {
@@ -117,14 +125,16 @@ static const gchar g_root_introspection[] =
 	"    </method>"
 	"    <method name='"DLR_INTERFACE_RELEASE"'>"
 	"    </method>"
-	"    <method name='"DLR_INTERFACE_GET_SERVERS"'>"
-	"      <arg type='as' name='"DLR_INTERFACE_SERVERS"'"
+	"    <method name='"DLR_INTERFACE_GET_RENDERERS"'>"
+	"      <arg type='as' name='"DLR_INTERFACE_RENDERERS"'"
 	"           direction='out'/>"
 	"    </method>"
-	"    <signal name='"DLR_INTERFACE_FOUND_SERVER"'>"
+	"    <method name='"DLR_INTERFACE_RESCAN"'>"
+	"    </method>"
+	"    <signal name='"DLR_INTERFACE_FOUND_RENDERER"'>"
 	"      <arg type='s' name='"DLR_INTERFACE_PATH"'/>"
 	"    </signal>"
-	"    <signal name='"DLR_INTERFACE_LOST_SERVER"'>"
+	"    <signal name='"DLR_INTERFACE_LOST_RENDERER"'>"
 	"      <arg type='s' name='"DLR_INTERFACE_PATH"'/>"
 	"    </signal>"
 	"  </interface>"
@@ -198,6 +208,12 @@ static const gchar g_server_introspection[] =
 	"      <arg type='s' name='"DLR_INTERFACE_URI"'"
 	"           direction='in'/>"
 	"    </method>"
+	"    <method name='"DLR_INTERFACE_OPEN_URI_EX"'>"
+	"      <arg type='s' name='"DLR_INTERFACE_URI"'"
+	"           direction='in'/>"
+	"      <arg type='s' name='"DLR_INTERFACE_METADATA"'"
+	"           direction='in'/>"
+	"    </method>"
 	"    <method name='"DLR_INTERFACE_SEEK"'>"
 	"      <arg type='x' name='"DLR_INTERFACE_OFFSET"'"
 	"           direction='in'/>"
@@ -245,6 +261,8 @@ static const gchar g_server_introspection[] =
 	"       access='read'/>"
 	"    <property type='u' name='"DLR_INTERFACE_PROP_NUMBER_OF_TRACKS"'"
 	"       access='read'/>"
+	"    <property type='b' name='"DLR_INTERFACE_PROP_MUTE"'"
+	"       access='readwrite'/>"
 	"  </interface>"
 	"  <interface name='"DLEYNA_INTERFACE_PUSH_HOST"'>"
 	"    <method name='"DLR_INTERFACE_HOST_FILE"'>"
@@ -260,6 +278,16 @@ static const gchar g_server_introspection[] =
 	"  </interface>"
 	"  <interface name='"DLEYNA_SERVER_INTERFACE_RENDERER_DEVICE"'>"
 	"    <method name='"DLR_INTERFACE_CANCEL"'>"
+	"    </method>"
+	"    <method name='"DLR_INTERFACE_GET_ICON"'>"
+	"      <arg type='s' name='"DLR_INTERFACE_REQ_MIME_TYPE"'"
+	"           direction='in'/>"
+	"      <arg type='s' name='"DLR_INTERFACE_RESOLUTION"'"
+	"           direction='in'/>"
+	"      <arg type='ay' name='"DLR_INTERFACE_ICON_BYTES"'"
+	"           direction='out'/>"
+	"      <arg type='s' name='"DLR_INTERFACE_MIME_TYPE"'"
+	"           direction='out'/>"
 	"    </method>"
 	"    <property type='s' name='"DLR_INTERFACE_PROP_DEVICE_TYPE"'"
 	"       access='read'/>"
@@ -382,6 +410,11 @@ static void prv_process_sync_task(dlr_task_t *task)
 		dlr_task_complete(task);
 		dleyna_task_queue_task_completed(task->atom.queue_id);
 		break;
+	case DLR_TASK_RESCAN:
+		dlr_upnp_rescan(g_context.upnp);
+		dlr_task_complete(task);
+		dleyna_task_queue_task_completed(task->atom.queue_id);
+		break;
 	case DLR_TASK_RAISE:
 	case DLR_TASK_QUIT:
 		error = g_error_new(DLEYNA_SERVER_ERROR,
@@ -481,6 +514,10 @@ static void prv_process_async_task(dlr_task_t *task)
 		dlr_upnp_remove_uri(g_context.upnp, task,
 				    prv_async_task_complete);
 		break;
+	case DLR_TASK_GET_ICON:
+		dlr_upnp_get_icon(g_context.upnp, task,
+				  prv_async_task_complete);
+		break;
 	default:
 		break;
 	}
@@ -543,10 +580,10 @@ static void prv_control_point_initialize(const dleyna_connector_t *connector,
 
 static void prv_control_point_stop_service(void)
 {
-	dlr_upnp_unsubscribe(g_context.upnp);
-
-	if (g_context.upnp)
+	if (g_context.upnp) {
+		dlr_upnp_unsubscribe(g_context.upnp);
 		dlr_upnp_delete(g_context.upnp);
+	}
 
 	if (g_context.connection) {
 		if (g_context.dlr_id)
@@ -600,8 +637,10 @@ static void prv_dlr_method_call(dleyna_connector_id_t conn,
 	} else {
 		if (!strcmp(method, DLR_INTERFACE_GET_VERSION))
 			task = dlr_task_get_version_new(invocation);
-		else if (!strcmp(method, DLR_INTERFACE_GET_SERVERS))
+		else if (!strcmp(method, DLR_INTERFACE_GET_RENDERERS))
 			task = dlr_task_get_servers_new(invocation);
+		else if (!strcmp(method, DLR_INTERFACE_RESCAN))
+			task = dlr_task_rescan_new(invocation);
 		else
 			goto finished;
 
@@ -741,6 +780,8 @@ static void prv_dlr_player_method_call(dleyna_connector_id_t conn,
 		task = dlr_task_previous_new(invocation, object);
 	else if (!strcmp(method, DLR_INTERFACE_OPEN_URI))
 		task = dlr_task_open_uri_new(invocation, object, parameters);
+	else if (!strcmp(method, DLR_INTERFACE_OPEN_URI_EX))
+		task = dlr_task_open_uri_ex_new(invocation, object, parameters);
 	else if (!strcmp(method, DLR_INTERFACE_SEEK))
 		task = dlr_task_seek_new(invocation, object, parameters);
 	else if (!strcmp(method, DLR_INTERFACE_SET_POSITION))
@@ -803,6 +844,7 @@ static void prv_renderer_device_method_call(
 					GVariant *parameters,
 					dleyna_connector_msg_id_t invocation)
 {
+	dlr_task_t *task;
 	const gchar *device_id = NULL;
 	GError *error = NULL;
 	const dleyna_task_queue_key_t *queue_id;
@@ -823,11 +865,15 @@ static void prv_renderer_device_method_call(
 			dleyna_task_processor_cancel_queue(queue_id);
 
 		g_context.connector->return_response(invocation, NULL);
+	} else if (!strcmp(method, DLR_INTERFACE_GET_ICON)) {
+		task = dlr_task_get_icon_new(invocation, object, parameters);
+
+		prv_add_task(task, sender, device_id);
 	}
 
 finished:
 
-		return;
+	return;
 }
 
 static void prv_found_media_server(const gchar *path)
@@ -837,7 +883,7 @@ static void prv_found_media_server(const gchar *path)
 	(void) g_context.connector->notify(g_context.connection,
 					   DLEYNA_SERVER_OBJECT,
 					   DLEYNA_SERVER_INTERFACE_MANAGER,
-					   DLR_INTERFACE_FOUND_SERVER,
+					   DLR_INTERFACE_FOUND_RENDERER,
 					   g_variant_new("(s)", path),
 					   NULL);
 }
@@ -849,7 +895,7 @@ static void prv_lost_media_server(const gchar *path)
 	(void) g_context.connector->notify(g_context.connection,
 					   DLEYNA_SERVER_OBJECT,
 					   DLEYNA_SERVER_INTERFACE_MANAGER,
-					   DLR_INTERFACE_LOST_SERVER,
+					   DLR_INTERFACE_LOST_RENDERER,
 					   g_variant_new("(s)", path),
 					   NULL);
 

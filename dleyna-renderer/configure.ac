@@ -1,7 +1,7 @@
 AC_PREREQ([2.66])
 
 AC_INIT([dleyna-renderer],
-	[0.0.1],
+	[0.2.0],
 	[https://github.com/01org/dleyna-renderer/issues/new],
 	,
 	[https://01.org/dleyna/])
@@ -39,7 +39,7 @@ PKG_PROG_PKG_CONFIG(0.16)
 PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.28])
 PKG_CHECK_MODULES([GIO], [gio-2.0 >= 2.28])
 PKG_CHECK_MODULES([GSSDP], [gssdp-1.0 >= 0.13.2])
-PKG_CHECK_MODULES([GUPNP], [gupnp-1.0 >= 0.19.1])
+PKG_CHECK_MODULES([GUPNP], [gupnp-1.0 >= 0.20.3])
 PKG_CHECK_MODULES([GUPNPAV], [gupnp-av-1.0 >= 0.11.5])
 PKG_CHECK_MODULES([GUPNPDLNA], [gupnp-dlna-2.0 >= 0.9.4])
 PKG_CHECK_MODULES([SOUP], [libsoup-2.4 >= 2.28.2])
@@ -185,6 +185,11 @@ AC_ARG_WITH(ua-prefix,
 		[with_ua_prefix = "$withval"; AC_DEFINE_UNQUOTED([UA_PREFIX], "$with_ua_prefix", [User Agent prefix])],
 		[])
 
+AC_ARG_WITH(dbus_service_dir,
+            AS_HELP_STRING([--with-dbus-service-dir=PATH],[choose directory for dbus service files, [default=PREFIX/share/dbus-1/services]]),
+            with_dbus_service_dir="$withval", with_dbus_service_dir=$datadir/dbus-1/services)
+DBUS_SERVICE_DIR=$with_dbus_service_dir
+AC_SUBST(DBUS_SERVICE_DIR)
 
 AC_ARG_ENABLE(lib-only,
 		AS_HELP_STRING(
@@ -193,15 +198,7 @@ AC_ARG_ENABLE(lib-only,
 		[],
 		[enable_lib_only=no])
 
-AS_IF([test "x$[]enable_lib_only" = "xno"],
-      [PKG_CHECK_MODULES([DBUS], [dbus-1],
-			 [DBUS_SESSION_DIR=`$PKG_CONFIG --variable=session_bus_services_dir dbus-1`;
-			  AC_SUBST(DBUS_SESSION_DIR)
-			 ],
-			 [enable_lib_only=yes])
-      ])
-
-AM_CONDITIONAL([BUILD_SERVER], [test "x$[]enable_lib_only" = "xno"])
+AM_CONDITIONAL([BUILD_SERVER], [test "x$enable_lib_only" = "xno"])
 
 
 AC_DEFINE([DLEYNA_SERVER_OBJECT], "/com/intel/dLeynaRenderer", [Name of object exposed by dleyna-renderer])
@@ -237,7 +234,6 @@ AC_CONFIG_FILES([Makefile						\
 		 libdleyna/renderer/Makefile				\
 		 libdleyna/renderer/dleyna-renderer-1.0.pc		\
 		 libdleyna/renderer/dleyna-renderer-service.conf	\
-		 server/com.intel.dleyna-renderer.service		\
 		 server/dleyna-renderer-service-1.0.pc			\
 		 server/Makefile
 		])

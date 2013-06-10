@@ -55,7 +55,6 @@ host_triplet = @host@
 libexec_PROGRAMS = dleyna-server-service$(EXEEXT)
 subdir = server
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
-	$(srcdir)/com.intel.dleyna-server.service.in \
 	$(srcdir)/dleyna-server-service-1.0.pc.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/compiler-flags.m4 \
@@ -67,11 +66,10 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES = com.intel.dleyna-server.service \
-	dleyna-server-service-1.0.pc
+CONFIG_CLEAN_FILES = dleyna-server-service-1.0.pc
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(libexecdir)" \
-	"$(DESTDIR)$(dbussessiondir)" "$(DESTDIR)$(pkgconfigdir)"
+	"$(DESTDIR)$(dbusservicedir)" "$(DESTDIR)$(pkgconfigdir)"
 PROGRAMS = $(libexec_PROGRAMS)
 am_dleyna_server_service_OBJECTS = daemon.$(OBJEXT)
 dleyna_server_service_OBJECTS = $(am_dleyna_server_service_OBJECTS)
@@ -142,7 +140,7 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-DATA = $(dbussession_DATA) $(pkgconfig_DATA)
+DATA = $(dbusservice_DATA) $(pkgconfig_DATA)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -160,9 +158,7 @@ CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CYGPATH_W = @CYGPATH_W@
-DBUS_CFLAGS = @DBUS_CFLAGS@
-DBUS_LIBS = @DBUS_LIBS@
-DBUS_SESSION_DIR = @DBUS_SESSION_DIR@
+DBUS_SERVICE_DIR = @DBUS_SERVICE_DIR@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLEYNA_CORE_CFLAGS = @DLEYNA_CORE_CFLAGS@
@@ -303,12 +299,14 @@ dleyna_server_service_LDADD = $(GLIB_LIBS)				    			\
 				$(DLEYNA_CORE_LIBS)			    			\
 				$(top_builddir)/libdleyna/server/libdleyna-server-1.0.la
 
-dbussessiondir = @DBUS_SESSION_DIR@
-dbussession_DATA = com.intel.dleyna-server.service
+dbusservicedir = $(DBUS_SERVICE_DIR)
+dbusservice_in_files = com.intel.dleyna-server.service.in
+dbusservice_DATA = com.intel.dleyna-server.service
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = dleyna-server-service-1.0.pc
-CLEANFILES = $(dbussession_DATA) $(pkgconfig_DATA)
-DISTCLEANFILES = $(dbussession_DATA) $(pkgconfig_DATA)
+EXTRA_DIST = $(dbusservice_in_files)
+CLEANFILES = $(dbusservice_DATA)
+DISTCLEANFILES = $(dbusservice_DATA)
 all: all-am
 
 .SUFFIXES:
@@ -343,8 +341,6 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
-com.intel.dleyna-server.service: $(top_builddir)/config.status $(srcdir)/com.intel.dleyna-server.service.in
-	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 dleyna-server-service-1.0.pc: $(top_builddir)/config.status $(srcdir)/dleyna-server-service-1.0.pc.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 install-libexecPROGRAMS: $(libexec_PROGRAMS)
@@ -434,27 +430,27 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
-install-dbussessionDATA: $(dbussession_DATA)
+install-dbusserviceDATA: $(dbusservice_DATA)
 	@$(NORMAL_INSTALL)
-	@list='$(dbussession_DATA)'; test -n "$(dbussessiondir)" || list=; \
+	@list='$(dbusservice_DATA)'; test -n "$(dbusservicedir)" || list=; \
 	if test -n "$$list"; then \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(dbussessiondir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(dbussessiondir)" || exit 1; \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(dbusservicedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(dbusservicedir)" || exit 1; \
 	fi; \
 	for p in $$list; do \
 	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
 	  echo "$$d$$p"; \
 	done | $(am__base_list) | \
 	while read files; do \
-	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(dbussessiondir)'"; \
-	  $(INSTALL_DATA) $$files "$(DESTDIR)$(dbussessiondir)" || exit $$?; \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(dbusservicedir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(dbusservicedir)" || exit $$?; \
 	done
 
-uninstall-dbussessionDATA:
+uninstall-dbusserviceDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(dbussession_DATA)'; test -n "$(dbussessiondir)" || list=; \
+	@list='$(dbusservice_DATA)'; test -n "$(dbusservicedir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
-	dir='$(DESTDIR)$(dbussessiondir)'; $(am__uninstall_files_from_dir)
+	dir='$(DESTDIR)$(dbusservicedir)'; $(am__uninstall_files_from_dir)
 install-pkgconfigDATA: $(pkgconfig_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
@@ -563,7 +559,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS) $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(libexecdir)" "$(DESTDIR)$(dbussessiondir)" "$(DESTDIR)$(pkgconfigdir)"; do \
+	for dir in "$(DESTDIR)$(libexecdir)" "$(DESTDIR)$(dbusservicedir)" "$(DESTDIR)$(pkgconfigdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -621,7 +617,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dbussessionDATA install-pkgconfigDATA
+install-data-am: install-dbusserviceDATA install-pkgconfigDATA
 
 install-dvi: install-dvi-am
 
@@ -667,7 +663,7 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-dbussessionDATA uninstall-libexecPROGRAMS \
+uninstall-am: uninstall-dbusserviceDATA uninstall-libexecPROGRAMS \
 	uninstall-pkgconfigDATA
 
 .MAKE: install-am install-strip
@@ -677,7 +673,7 @@ uninstall-am: uninstall-dbussessionDATA uninstall-libexecPROGRAMS \
 	distclean-compile distclean-generic distclean-libtool \
 	distclean-tags distdir dvi dvi-am html html-am info info-am \
 	install install-am install-data install-data-am \
-	install-dbussessionDATA install-dvi install-dvi-am \
+	install-dbusserviceDATA install-dvi install-dvi-am \
 	install-exec install-exec-am install-html install-html-am \
 	install-info install-info-am install-libexecPROGRAMS \
 	install-man install-pdf install-pdf-am install-pkgconfigDATA \
@@ -685,9 +681,13 @@ uninstall-am: uninstall-dbussessionDATA uninstall-libexecPROGRAMS \
 	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	tags uninstall uninstall-am uninstall-dbussessionDATA \
+	tags uninstall uninstall-am uninstall-dbusserviceDATA \
 	uninstall-libexecPROGRAMS uninstall-pkgconfigDATA
 
+
+# Replace the 'libexecdir' marker with its fully expanded value
+%.service: %.service.in Makefile
+	$(AM_V_GEN) $(SED) -e "s|\@libexecdir\@|$(libexecdir)|" $< > $@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

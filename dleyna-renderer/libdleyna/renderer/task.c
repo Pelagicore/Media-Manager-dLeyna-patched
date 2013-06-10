@@ -26,6 +26,17 @@
 #include "async.h"
 #include "server.h"
 
+dlr_task_t *dlr_task_rescan_new(dleyna_connector_msg_id_t invocation)
+{
+	dlr_task_t *task = g_new0(dlr_task_t, 1);
+
+	task->type = DLR_TASK_RESCAN;
+	task->invocation = invocation;
+	task->synchronous = TRUE;
+
+	return task;
+}
+
 dlr_task_t *dlr_task_get_version_new(dleyna_connector_msg_id_t invocation)
 {
 	dlr_task_t *task = g_new0(dlr_task_t, 1);
@@ -93,11 +104,16 @@ static void prv_dlr_task_delete(dlr_task_t *task)
 		break;
 	case DLR_TASK_OPEN_URI:
 		g_free(task->ut.open_uri.uri);
+		g_free(task->ut.open_uri.metadata);
 		break;
 	case DLR_TASK_HOST_URI:
 	case DLR_TASK_REMOVE_URI:
 		g_free(task->ut.host_uri.uri);
 		g_free(task->ut.host_uri.client);
+		break;
+	case DLR_TASK_GET_ICON:
+		g_free(task->ut.get_icon.mime_type);
+		g_free(task->ut.get_icon.resolution);
 		break;
 	default:
 		break;
@@ -255,6 +271,24 @@ dlr_task_t *dlr_task_open_uri_new(dleyna_connector_msg_id_t invocation,
 	g_variant_get(parameters, "(s)", &task->ut.open_uri.uri);
 	g_strstrip(task->ut.open_uri.uri);
 
+	task->ut.open_uri.metadata = NULL;
+
+	return task;
+}
+
+dlr_task_t *dlr_task_open_uri_ex_new(dleyna_connector_msg_id_t invocation,
+				     const gchar *path, GVariant *parameters)
+{
+	dlr_task_t *task;
+
+	task = prv_device_task_new(DLR_TASK_OPEN_URI, invocation, path,
+				   NULL);
+
+	g_variant_get(parameters, "(ss)",
+		      &task->ut.open_uri.uri, &task->ut.open_uri.metadata);
+	g_strstrip(task->ut.open_uri.uri);
+	g_strstrip(task->ut.open_uri.metadata);
+
 	return task;
 }
 
@@ -291,21 +325,42 @@ dlr_task_t *dlr_task_remove_uri_new(dleyna_connector_msg_id_t invocation,
 	return task;
 }
 
+dlr_task_t *dlr_task_get_icon_new(dleyna_connector_msg_id_t invocation,
+				  const gchar *path, GVariant *parameters)
+{
+	dlr_task_t *task;
+
+	task = prv_device_task_new(DLR_TASK_GET_ICON, invocation, path,
+				   "(@ays)");
+	task->multiple_retvals = TRUE;
+
+	g_variant_get(parameters, "(ss)", &task->ut.get_icon.mime_type,
+		      &task->ut.get_icon.resolution);
+
+	return task;
+}
+
 void dlr_task_complete(dlr_task_t *task)
 {
+	GVariant *result;
+
 	if (!task)
 		goto finished;
 
 	if (task->invocation) {
-		if (task->result_format && task->result)
+		if (task->result_format && task->result) {
+			if (task->multiple_retvals)
+				result = task->result;
+			else
+				result = g_variant_new(task->result_format,
+						       task->result);
 			dlr_renderer_get_connector()->return_response(
-				task->invocation,
-				g_variant_new(task->result_format,
-					      task->result));
-		else
+						task->invocation, result);
+		} else {
 			dlr_renderer_get_connector()->return_response(
 							task->invocation,
 							NULL);
+		}
 
 		task->invocation = NULL;
 	}

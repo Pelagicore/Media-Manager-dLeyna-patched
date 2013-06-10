@@ -89,6 +89,9 @@ enum dls_interface_type_ {
 /* Resources Properties */
 #define DLS_INTERFACE_PROP_MIME_TYPE "MIMEType"
 #define DLS_INTERFACE_PROP_DLNA_PROFILE "DLNAProfile"
+#define DLS_INTERFACE_PROP_DLNA_CONVERSION "DLNAConversion"
+#define DLS_INTERFACE_PROP_DLNA_OPERATION "DLNAOperation"
+#define DLS_INTERFACE_PROP_DLNA_FLAGS "DLNAFlags"
 #define DLS_INTERFACE_PROP_SIZE "Size"
 #define DLS_INTERFACE_PROP_DURATION "Duration"
 #define DLS_INTERFACE_PROP_BITRATE "Bitrate"
@@ -106,6 +109,7 @@ enum dls_interface_type_ {
 
 #define DLS_INTERFACE_GET_VERSION "GetVersion"
 #define DLS_INTERFACE_GET_SERVERS "GetServers"
+#define DLS_INTERFACE_RESCAN "Rescan"
 #define DLS_INTERFACE_RELEASE "Release"
 #define DLS_INTERFACE_SET_PROTOCOL_INFO "SetProtocolInfo"
 #define DLS_INTERFACE_PREFER_LOCAL_ADDRESSES "PreferLocalAddresses"
@@ -178,14 +182,16 @@ enum dls_interface_type_ {
 #define DLS_INTERFACE_TO_ADD_UPDATE "ToAddUpdate"
 #define DLS_INTERFACE_TO_DELETE "ToDelete"
 #define DLS_INTERFACE_CANCEL "Cancel"
+#define DLS_INTERFACE_GET_ICON "GetIcon"
+#define DLS_INTERFACE_RESOLUTION "Resolution"
+#define DLS_INTERFACE_ICON_BYTES "Bytes"
+#define DLS_INTERFACE_MIME_TYPE "MimeType"
+#define DLS_INTERFACE_REQ_MIME_TYPE "RequestedMimeType"
 
-#define DLS_INTERFACE_CREATE_PLAYLIST "CreatePlaylist"
-#define DLS_INTERFACE_CREATE_PLAYLIST_TO_ANY "CreatePlaylistInAnyContainer"
-#define DLS_INTERFACE_TITLE "Title"
-#define DLS_INTERFACE_CREATOR "Creator"
-#define DLS_INTERFACE_GENRE "Genre"
-#define DLS_INTERFACE_DESCRIPTION "Description"
-#define DLS_INTERFACE_PLAYLIST_ITEMS "PlaylistItems"
+#define DLS_INTERFACE_GET_METADATA "GetMetaData"
+#define DLS_INTERFACE_METADATA "MetaData"
 
+#define DLS_INTERFACE_CREATE_REFERENCE "CreateReference"
+#define DLS_INTERFACE_REFPATH "RefPath"
 
 #endif /* DLEYNA_SERVER_INTERFACE_H__ */

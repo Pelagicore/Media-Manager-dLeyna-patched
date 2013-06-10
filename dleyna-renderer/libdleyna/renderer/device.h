@@ -64,6 +64,13 @@ struct dlr_props_t_ {
 	gboolean synced;
 };
 
+typedef struct dlr_device_icon_t_ dlr_device_icon_t;
+struct dlr_device_icon_t_ {
+	gchar *mime_type;
+	guchar *bytes;
+	gsize size;
+};
+
 struct dlr_device_t_ {
 	dleyna_connector_id_t connection;
 	guint ids[DLR_INTERFACE_INFO_MAX];
@@ -73,8 +80,21 @@ struct dlr_device_t_ {
 	guint timeout_id;
 	guint max_volume;
 	GPtrArray *transport_play_speeds;
+	GPtrArray *dlna_transport_play_speeds;
+	GVariant *mpris_transport_play_speeds;
 	gchar *rate;
+	double min_rate;
+	double max_rate;
+	guint construct_step;
+	dlr_device_icon_t icon;
 };
+
+void dlr_device_construct(
+			dlr_device_t *dev,
+			dlr_device_context_t *context,
+			dleyna_connector_id_t connection,
+			const dleyna_connector_dispatch_cb_t *dispatch_table,
+			const dleyna_task_queue_key_t *queue_id);
 
 dlr_device_t *dlr_device_new(
 			dleyna_connector_id_t connection,
@@ -145,5 +165,8 @@ void dlr_device_host_uri(dlr_device_t *device, dlr_task_t *task,
 void dlr_device_remove_uri(dlr_device_t *device, dlr_task_t *task,
 			   dlr_host_service_t *host_service,
 			   dlr_upnp_task_complete_t cb);
+
+void dlr_device_get_icon(dlr_device_t *device, dlr_task_t *task,
+			 dlr_upnp_task_complete_t cb);
 
 #endif /* DLR_DEVICE_H__ */

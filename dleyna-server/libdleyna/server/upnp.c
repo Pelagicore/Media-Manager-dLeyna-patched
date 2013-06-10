@@ -57,6 +57,7 @@ typedef struct prv_device_new_ct_t_ prv_device_new_ct_t;
 struct prv_device_new_ct_t_ {
 	dls_upnp_t *upnp;
 	char *udn;
+	gchar *ip_address;
 	dls_device_t *device;
 	const dleyna_task_queue_key_t *queue_id;
 };
@@ -65,6 +66,7 @@ static void prv_device_new_free(prv_device_new_ct_t *priv_t)
 {
 	if (priv_t) {
 		g_free(priv_t->udn);
+		g_free(priv_t->ip_address);
 		g_free(priv_t);
 	}
 }
@@ -89,12 +91,62 @@ static void prv_device_chain_end(gboolean cancelled, gpointer data)
 on_clear:
 
 	g_hash_table_remove(priv_t->upnp->server_uc_map, priv_t->udn);
-	prv_device_new_free(priv_t);
 
 	if (cancelled)
 		dls_device_delete(device);
 
+	prv_device_new_free(priv_t);
+
 	DLEYNA_LOG_DEBUG_NL();
+}
+
+static void prv_device_context_switch_end(gboolean cancelled, gpointer data)
+{
+	prv_device_new_ct_t *priv_t = (prv_device_new_ct_t *)data;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	g_hash_table_remove(priv_t->upnp->server_uc_map, priv_t->udn);
+	prv_device_new_free(priv_t);
+
+	DLEYNA_LOG_DEBUG("Exit");
+}
+
+static const dleyna_task_queue_key_t *prv_create_device_queue(
+						prv_device_new_ct_t **priv_t)
+{
+	const dleyna_task_queue_key_t *queue_id;
+
+	*priv_t = g_new0(prv_device_new_ct_t, 1);
+
+	queue_id = dleyna_task_processor_add_queue(
+			dls_server_get_task_processor(),
+			dleyna_service_task_create_source(),
+			DLS_SERVER_SINK,
+			DLEYNA_TASK_QUEUE_FLAG_AUTO_REMOVE,
+			dleyna_service_task_process_cb,
+			dleyna_service_task_cancel_cb,
+			dleyna_service_task_delete_cb);
+	dleyna_task_queue_set_finally(queue_id, prv_device_chain_end);
+	dleyna_task_queue_set_user_data(queue_id, *priv_t);
+
+
+	return queue_id;
+}
+
+static void prv_update_device_context(prv_device_new_ct_t *priv_t,
+				      dls_upnp_t *upnp, const char *udn,
+				      dls_device_t *device,
+				      const gchar *ip_address,
+				      const dleyna_task_queue_key_t *queue_id)
+{
+	priv_t->upnp = upnp;
+	priv_t->udn = g_strdup(udn);
+	priv_t->ip_address = g_strdup(ip_address);
+	priv_t->queue_id = queue_id;
+	priv_t->device = device;
+
+	g_hash_table_insert(upnp->server_uc_map, g_strdup(udn), priv_t);
 }
 
 static void prv_server_available_cb(GUPnPControlPoint *cp,
@@ -133,32 +185,17 @@ static void prv_server_available_cb(GUPnPControlPoint *cp,
 		DLEYNA_LOG_DEBUG("Device not found. Adding");
 		DLEYNA_LOG_DEBUG_NL();
 
-		priv_t = g_new0(prv_device_new_ct_t, 1);
-
-		queue_id = dleyna_task_processor_add_queue(
-				dls_server_get_task_processor(),
-				dleyna_service_task_create_source(),
-				DLS_SERVER_SINK,
-				DLEYNA_TASK_QUEUE_FLAG_AUTO_REMOVE,
-				dleyna_service_task_process_cb,
-				dleyna_service_task_cancel_cb,
-				dleyna_service_task_delete_cb);
-		dleyna_task_queue_set_finally(queue_id, prv_device_chain_end);
-		dleyna_task_queue_set_user_data(queue_id, priv_t);
+		queue_id = prv_create_device_queue(&priv_t);
 
 		device = dls_device_new(upnp->connection, proxy, ip_address,
 					upnp->interface_info,
 					upnp->property_map, upnp->counter,
 					queue_id);
 
+		prv_update_device_context(priv_t, upnp, udn, device, ip_address,
+					  queue_id);
+
 		upnp->counter++;
-
-		priv_t->upnp = upnp;
-		priv_t->udn = g_strdup(udn);
-		priv_t->queue_id = queue_id;
-		priv_t->device = device;
-
-		g_hash_table_insert(upnp->server_uc_map, g_strdup(udn), priv_t);
 	} else {
 		DLEYNA_LOG_DEBUG("Device Found");
 
@@ -203,8 +240,10 @@ static void prv_server_unavailable_cb(GUPnPControlPoint *cp,
 	unsigned int i;
 	dls_device_context_t *context;
 	gboolean subscribed;
+	gboolean construction_ctx = FALSE;
 	gboolean under_construction = FALSE;
 	prv_device_new_ct_t *priv_t;
+	const dleyna_task_queue_key_t *queue_id;
 
 	DLEYNA_LOG_DEBUG("Enter");
 
@@ -244,6 +283,9 @@ static void prv_server_unavailable_cb(GUPnPControlPoint *cp,
 		goto on_error;
 
 	subscribed = context->subscribed;
+	if (under_construction)
+		construction_ctx = !strcmp(context->ip_address,
+					   priv_t->ip_address);
 
 	(void) g_ptr_array_remove_index(device->contexts, i);
 
@@ -258,6 +300,30 @@ static void prv_server_unavailable_cb(GUPnPControlPoint *cp,
 
 			dleyna_task_processor_cancel_queue(priv_t->queue_id);
 		}
+	} else if (under_construction && construction_ctx) {
+		DLEYNA_LOG_WARNING(
+			"Device under construction. Switching context");
+
+		/* Cancel previous contruction task chain */
+		g_hash_table_remove(priv_t->upnp->server_uc_map, priv_t->udn);
+		dleyna_task_queue_set_finally(priv_t->queue_id,
+					      prv_device_context_switch_end);
+		dleyna_task_processor_cancel_queue(priv_t->queue_id);
+
+		/* Create a new construction task chain */
+		context = dls_device_get_context(device, NULL);
+		queue_id = prv_create_device_queue(&priv_t);
+		prv_update_device_context(priv_t, upnp, udn, device,
+					  context->ip_address, queue_id);
+
+		/* Start tasks from current construction step */
+		dls_device_construct(device,
+				     context,
+				     upnp->connection,
+				     upnp->interface_info,
+				     upnp->property_map,
+				     queue_id);
+
 	} else if (subscribed && !device->timeout_id) {
 		DLEYNA_LOG_DEBUG("Subscribe on new context");
 
@@ -580,6 +646,8 @@ void dls_upnp_get_resource(dls_upnp_t *upnp, dls_client_t *client,
 
 	dls_device_get_resource(client, task, upnp_filter);
 
+	g_free(upnp_filter);
+
 	DLEYNA_LOG_DEBUG("Exit");
 }
 
@@ -591,7 +659,6 @@ static gboolean prv_compute_mime_and_class(dls_task_t *task,
 
 	if (!g_file_test(task->ut.upload.file_path,
 			 G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS)) {
-
 		DLEYNA_LOG_WARNING(
 			"File %s does not exist or is not a regular file",
 			task->ut.upload.file_path);
@@ -607,7 +674,6 @@ static gboolean prv_compute_mime_and_class(dls_task_t *task,
 					    NULL);
 
 	if (!content_type) {
-
 		DLEYNA_LOG_WARNING("Unable to determine Content Type for %s",
 				   task->ut.upload.file_path);
 
@@ -621,7 +687,6 @@ static gboolean prv_compute_mime_and_class(dls_task_t *task,
 	g_free(content_type);
 
 	if (!cb_task_data->mime_type) {
-
 		DLEYNA_LOG_WARNING("Unable to determine MIME Type for %s",
 				   task->ut.upload.file_path);
 
@@ -638,7 +703,6 @@ static gboolean prv_compute_mime_and_class(dls_task_t *task,
 	} else if (g_content_type_is_a(cb_task_data->mime_type, "video/*")) {
 		cb_task_data->object_class = "object.item.videoItem";
 	} else {
-
 		DLEYNA_LOG_WARNING("Unsupported MIME Type %s",
 				   cb_task_data->mime_type);
 
@@ -848,6 +912,9 @@ void dls_upnp_create_container(dls_upnp_t *upnp, dls_client_t *client,
 
 	dls_device_create_container(client, task, task->target.id);
 
+	if (!cb_data->action)
+		(void) g_idle_add(dls_async_task_complete, cb_data);
+
 	DLEYNA_LOG_DEBUG("Exit");
 }
 
@@ -941,109 +1008,56 @@ on_error:
 	DLEYNA_LOG_DEBUG("Exit");
 }
 
-void dls_upnp_create_playlist(dls_upnp_t *upnp, dls_client_t *client,
-			      dls_task_t *task,
-			      dls_upnp_task_complete_t cb)
+void dls_upnp_get_object_metadata(dls_upnp_t *upnp, dls_client_t *client,
+				  dls_task_t *task, dls_upnp_task_complete_t cb)
 {
 	dls_async_task_t *cb_data = (dls_async_task_t *)task;
-	dls_task_create_playlist_t *task_data;
 
 	DLEYNA_LOG_DEBUG("Enter");
 
 	cb_data->cb = cb;
-	task_data = &task->ut.playlist;
 
-	DLEYNA_LOG_DEBUG("Root Path: %s - Id: %s", task->target.root_path,
+	DLEYNA_LOG_DEBUG("Root Path %s Id %s", task->target.root_path,
 			 task->target.id);
 
-	if (!task_data->title || !*task_data->title)
-		goto on_param_error;
-
-	if (!g_variant_n_children(task_data->item_path))
-		goto on_param_error;
-
-	DLEYNA_LOG_DEBUG_NL();
-	DLEYNA_LOG_DEBUG("Title = %s", task_data->title);
-	DLEYNA_LOG_DEBUG("Creator = %s", task_data->creator);
-	DLEYNA_LOG_DEBUG("Genre = %s", task_data->genre);
-	DLEYNA_LOG_DEBUG("Desc = %s", task_data->desc);
-	DLEYNA_LOG_DEBUG_NL();
-
-	dls_device_playlist_upload(client, task, task->target.id);
+	dls_device_get_object_metadata(client, task, task->target.id);
 
 	DLEYNA_LOG_DEBUG("Exit");
-
-	return;
-
-on_param_error:
-
-	DLEYNA_LOG_WARNING("Invalid Parameter");
-
-	cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
-				     DLEYNA_ERROR_OPERATION_FAILED,
-				     "Invalid Parameter");
-
-	(void) g_idle_add(dls_async_task_complete, cb_data);
-
-	DLEYNA_LOG_DEBUG("Exit failure");
 }
 
-void dls_upnp_create_playlist_in_any(dls_upnp_t *upnp, dls_client_t *client,
-				     dls_task_t *task,
-				     dls_upnp_task_complete_t cb)
+void dls_upnp_create_reference(dls_upnp_t *upnp, dls_client_t *client,
+			       dls_task_t *task,
+			       dls_upnp_task_complete_t cb)
 {
 	dls_async_task_t *cb_data = (dls_async_task_t *)task;
-	dls_task_create_playlist_t *task_data;
 
 	DLEYNA_LOG_DEBUG("Enter");
 
 	cb_data->cb = cb;
-	task_data = &task->ut.playlist;
 
 	DLEYNA_LOG_DEBUG("Root Path: %s - Id: %s", task->target.root_path,
 			 task->target.id);
 
-	if (strcmp(task->target.id, "0")) {
-		DLEYNA_LOG_WARNING("Bad path %s", task->target.path);
-
-		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
-					     DLEYNA_ERROR_BAD_PATH,
-					     "CreatePlayListInAny must be executed on a root path");
-
-		goto on_error;
-	}
-
-	if (!task_data->title || !*task_data->title)
-		goto on_param_error;
-
-	if (!g_variant_n_children(task_data->item_path))
-		goto on_param_error;
-
-	DLEYNA_LOG_DEBUG_NL();
-	DLEYNA_LOG_DEBUG("Title = %s", task_data->title);
-	DLEYNA_LOG_DEBUG("Creator = %s", task_data->creator);
-	DLEYNA_LOG_DEBUG("Genre = %s", task_data->genre);
-	DLEYNA_LOG_DEBUG("Desc = %s", task_data->desc);
-	DLEYNA_LOG_DEBUG_NL();
-
-	dls_device_playlist_upload(client, task, "DLNA.ORG_AnyContainer");
+	dls_device_create_reference(client, task);
 
 	DLEYNA_LOG_DEBUG("Exit");
 
 	return;
+}
 
-on_param_error:
+void dls_upnp_get_icon(dls_upnp_t *upnp, dls_client_t *client,
+		       dls_task_t *task,
+		       dls_upnp_task_complete_t cb)
+{
+	dls_async_task_t *cb_data = (dls_async_task_t *)task;
 
-	DLEYNA_LOG_WARNING("Invalid Parameter");
+	DLEYNA_LOG_DEBUG("Enter");
 
-	cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
-				     DLEYNA_ERROR_OPERATION_FAILED,
-				     "Invalid Parameter");
-on_error:
+	cb_data->cb = cb;
 
-	(void) g_idle_add(dls_async_task_complete, cb_data);
+	dls_device_get_icon(client, task);
 
-	DLEYNA_LOG_DEBUG("Exit failure");
+	DLEYNA_LOG_DEBUG("Exit");
 }
 
 void dls_upnp_unsubscribe(dls_upnp_t *upnp)
@@ -1107,4 +1121,11 @@ gboolean dls_upnp_device_context_exist(dls_device_t *device,
 
 on_exit:
 	return found;
+}
+
+void dls_upnp_rescan(dls_upnp_t *upnp)
+{
+	DLEYNA_LOG_DEBUG("re-scanning control points");
+
+	gupnp_context_manager_rescan_control_points(upnp->context_manager);
 }

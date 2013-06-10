@@ -171,9 +171,7 @@ CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CYGPATH_W = @CYGPATH_W@
-DBUS_CFLAGS = @DBUS_CFLAGS@
-DBUS_LIBS = @DBUS_LIBS@
-DBUS_SESSION_DIR = @DBUS_SESSION_DIR@
+DBUS_SERVICE_DIR = @DBUS_SERVICE_DIR@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLEYNA_CORE_CFLAGS = @DLEYNA_CORE_CFLAGS@
@@ -303,7 +301,7 @@ with_connector_name = @with_connector_name@
 with_log_level = @with_log_level@
 with_log_type = @with_log_type@
 libdleyna_rendererincdir = $(includedir)/dleyna-1.0/libdleyna/renderer
-DLEYNA_RENDERER_VERSION = 1:0:0
+DLEYNA_RENDERER_VERSION = 1:2:0
 AM_CFLAGS = $(GLIB_CFLAGS)				\
 		$(GIO_CFLAGS)				\
 		$(DLEYNA_CORE_CFLAGS)			\
