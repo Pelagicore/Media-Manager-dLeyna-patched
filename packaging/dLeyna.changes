@@ -1,3 +1,6 @@
+* Mon Jul 15 23:56:26 UTC 2013 - tracy.graydon@intel.com
+- Stripped out the old yaml cruft from spec file 
+
 * Tue Jun 11 2013 Regis Merlino <regis.merlino@intel.com>
 - Update dleyna to 0.2.0 (4bcad24)
 
