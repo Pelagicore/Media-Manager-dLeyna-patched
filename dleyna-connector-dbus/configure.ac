@@ -1,7 +1,7 @@
 AC_PREREQ([2.66])
 
 AC_INIT([dleyna-connector-dbus],
-	[0.1.0],
+	[0.2.0],
 	[https://github.com/01org/dleyna-connector-dbus/issues/new],
 	,
 	[https://01.org/dleyna/])
@@ -79,7 +79,7 @@ AC_ARG_ENABLE(master-build,,
 		[master_build=no])
 
 AS_IF([test "x$master_build" = "xno"],
-      [PKG_CHECK_MODULES([DLEYNA_CORE], [dleyna-core-1.0 >= 0.0.1])],
+      [PKG_CHECK_MODULES([DLEYNA_CORE], [dleyna-core-1.0 >= 0.2.1])],
       [DLEYNA_CORE_CFLAGS="-I../dleyna-core";
        DLEYNA_CORE_LIBS="-L../dleyna-core/.libs -ldleyna-core-1.0"
       ])

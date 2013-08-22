@@ -1,7 +1,7 @@
 AC_PREREQ([2.66])
 
 AC_INIT([dleyna-renderer],
-	[0.2.0],
+	[0.2.2],
 	[https://github.com/01org/dleyna-renderer/issues/new],
 	,
 	[https://01.org/dleyna/])
@@ -39,7 +39,7 @@ PKG_PROG_PKG_CONFIG(0.16)
 PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.28])
 PKG_CHECK_MODULES([GIO], [gio-2.0 >= 2.28])
 PKG_CHECK_MODULES([GSSDP], [gssdp-1.0 >= 0.13.2])
-PKG_CHECK_MODULES([GUPNP], [gupnp-1.0 >= 0.20.3])
+PKG_CHECK_MODULES([GUPNP], [gupnp-1.0 >= 0.20.5])
 PKG_CHECK_MODULES([GUPNPAV], [gupnp-av-1.0 >= 0.11.5])
 PKG_CHECK_MODULES([GUPNPDLNA], [gupnp-dlna-2.0 >= 0.9.4])
 PKG_CHECK_MODULES([SOUP], [libsoup-2.4 >= 2.28.2])
@@ -83,7 +83,7 @@ AC_ARG_ENABLE(master-build,,
 		[master_build=no])
 
 AS_IF([test "x$master_build" = "xno"],
-      [PKG_CHECK_MODULES([DLEYNA_CORE], [dleyna-core-1.0 >= 0.0.1])],
+      [PKG_CHECK_MODULES([DLEYNA_CORE], [dleyna-core-1.0 >= 0.2.2])],
       [this_abs_top_srcdir=`cd "$srcdir" && pwd`;
        DLEYNA_CORE_CFLAGS="-I$this_abs_top_srcdir/../dleyna-core";
        DLEYNA_CORE_LIBS="-L$this_abs_top_srcdir/../dleyna-core/.libs -ldleyna-core-1.0"
@@ -252,7 +252,7 @@ CFLAGS    : '${CFLAGS}'
 	- enable-werror       : ${enable_werror}
 	- enable-debug        : ${enable_debug}
 	- enable-never-quit   : ${enable_never_quit}
-	- with_connector-name : ${with_connector_name}
+	- with-connector-name : ${with_connector_name}
 	- disable-optimization: ${disable_optimization}
 	- with-log-level      : ${with_log_level}
 	- with-log-type       : ${with_log_type}

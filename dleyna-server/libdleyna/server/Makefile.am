@@ -1,6 +1,6 @@
 libdleyna_serverincdir = $(includedir)/dleyna-1.0/libdleyna/server
 
-DLEYNA_SERVER_VERSION = 1:2:0
+DLEYNA_SERVER_VERSION = 1:3:0
 
 AM_CFLAGS =	$(GLIB_CFLAGS)				\
 		$(GIO_CFLAGS)				\
@@ -14,7 +14,7 @@ AM_CFLAGS =	$(GLIB_CFLAGS)				\
 
 ACLOCAL_AMFLAGS = -I m4 ${ACLOCAL_FLAGS}
 
-lib_LTLIBRARIES = libdleyna-server-1.0.la
+pkglib_LTLIBRARIES = libdleyna-server-1.0.la
 
 libdleyna_serverinc_HEADERS = 	control-point-server.h
 
@@ -25,6 +25,7 @@ libdleyna_server_1_0_la_SOURCES =	$(libdleyna_serverinc_HEADERS)	\
 					server.c		\
 					async.c				\
 					device.c	 		\
+					manager.c	 		\
 					path.c		 		\
 					props.c		 		\
 					search.c	 		\
@@ -61,6 +62,7 @@ EXTRA_DIST = 	$(sysconf_DATA)			\
 		client.h			\
 		device.h			\
 		interface.h			\
+		manager.h			\
 		path.h				\
 		props.h				\
 		search.h			\

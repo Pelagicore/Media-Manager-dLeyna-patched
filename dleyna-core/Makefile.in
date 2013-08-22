@@ -115,7 +115,7 @@ am_libdleyna_core_1_0_la_OBJECTS = $(am__objects_1) \
 	libdleyna/core/connector-mgr.lo libdleyna/core/error.lo \
 	libdleyna/core/log.lo libdleyna/core/main-loop.lo \
 	libdleyna/core/service-task.lo libdleyna/core/settings.lo \
-	libdleyna/core/task-processor.lo
+	libdleyna/core/task-processor.lo libdleyna/core/white-list.lo
 libdleyna_core_1_0_la_OBJECTS = $(am_libdleyna_core_1_0_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -309,7 +309,7 @@ with_log_level = @with_log_level@
 libdleyna_coreincdir = $(includedir)/dleyna-1.0/libdleyna/core
 connectordir = $(libdir)/dleyna-1.0/connectors
 sysconfigdir = $(sysconfdir)
-DLEYNA_CORE_VERSION = 1:2:0
+DLEYNA_CORE_VERSION = 2:0:1
 AM_CFLAGS = $(GLIB_CFLAGS)				\
 		$(GIO_CFLAGS)				\
 		$(GMODULE_CFLAGS)			\
@@ -329,7 +329,8 @@ libdleyna_coreinc_HEADERS = libdleyna/core/connector.h	\
 				libdleyna/core/service-task.h	\
 				libdleyna/core/settings.h	\
 				libdleyna/core/task-atom.h	\
-				libdleyna/core/task-processor.h
+				libdleyna/core/task-processor.h	\
+				libdleyna/core/white-list.h
 
 libdleyna_core_1_0_la_LDFLAGS = -version-info $(DLEYNA_CORE_VERSION) \
 				-no-undefined
@@ -341,7 +342,8 @@ libdleyna_core_1_0_la_SOURCES = $(libdleyna_coreinc_HEADERS)	\
 				libdleyna/core/main-loop.c	\
 				libdleyna/core/service-task.c	\
 				libdleyna/core/settings.c	\
-				libdleyna/core/task-processor.c
+				libdleyna/core/task-processor.c	\
+				libdleyna/core/white-list.c
 
 libdleyna_core_1_0_la_LIBADD = $(GLIB_LIBS)	\
 				$(GIO_LIBS)	\
@@ -470,6 +472,8 @@ libdleyna/core/settings.lo: libdleyna/core/$(am__dirstamp) \
 	libdleyna/core/$(DEPDIR)/$(am__dirstamp)
 libdleyna/core/task-processor.lo: libdleyna/core/$(am__dirstamp) \
 	libdleyna/core/$(DEPDIR)/$(am__dirstamp)
+libdleyna/core/white-list.lo: libdleyna/core/$(am__dirstamp) \
+	libdleyna/core/$(DEPDIR)/$(am__dirstamp)
 libdleyna-core-1.0.la: $(libdleyna_core_1_0_la_OBJECTS) $(libdleyna_core_1_0_la_DEPENDENCIES) $(EXTRA_libdleyna_core_1_0_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(libdleyna_core_1_0_la_LINK) -rpath $(libdir) $(libdleyna_core_1_0_la_OBJECTS) $(libdleyna_core_1_0_la_LIBADD) $(LIBS)
 
@@ -489,6 +493,8 @@ mostlyclean-compile:
 	-rm -f libdleyna/core/settings.lo
 	-rm -f libdleyna/core/task-processor.$(OBJEXT)
 	-rm -f libdleyna/core/task-processor.lo
+	-rm -f libdleyna/core/white-list.$(OBJEXT)
+	-rm -f libdleyna/core/white-list.lo
 
 distclean-compile:
 	-rm -f *.tab.c
@@ -500,6 +506,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@libdleyna/core/$(DEPDIR)/service-task.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@libdleyna/core/$(DEPDIR)/settings.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@libdleyna/core/$(DEPDIR)/task-processor.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@libdleyna/core/$(DEPDIR)/white-list.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\

@@ -23,6 +23,12 @@
 #ifndef DLEYNA_SERVER_INTERFACE_H__
 #define DLEYNA_SERVER_INTERFACE_H__
 
+enum dls_manager_interface_type_ {
+	DLS_MANAGER_INTERFACE_MANAGER,
+	DLS_MANAGER_INTERFACE_INFO_PROPERTIES,
+	DLS_MANAGER_INTERFACE_INFO_MAX
+};
+
 enum dls_interface_type_ {
 	DLS_INTERFACE_INFO_PROPERTIES,
 	DLS_INTERFACE_INFO_OBJECT,
@@ -37,12 +43,17 @@ enum dls_interface_type_ {
 #define DLS_INTERFACE_MEDIA_OBJECT "org.gnome.UPnP.MediaObject2"
 #define DLS_INTERFACE_MEDIA_ITEM "org.gnome.UPnP.MediaItem2"
 
+/* Manager Properties */
+#define DLS_INTERFACE_PROP_WHITE_LIST_ENTRIES "WhiteListEntries"
+#define DLS_INTERFACE_PROP_WHITE_LIST_ENABLED "WhiteListEnabled"
+
 /* Object Properties */
 #define DLS_INTERFACE_PROP_PATH "Path"
 #define DLS_INTERFACE_PROP_PARENT "Parent"
 #define DLS_INTERFACE_PROP_RESTRICTED "Restricted"
 #define DLS_INTERFACE_PROP_DISPLAY_NAME "DisplayName"
 #define DLS_INTERFACE_PROP_TYPE "Type"
+#define DLS_INTERFACE_PROP_TYPE_EX "TypeEx"
 #define DLS_INTERFACE_PROP_CREATOR "Creator"
 #define DLS_INTERFACE_PROP_DLNA_MANAGED "DLNAManaged"
 #define DLS_INTERFACE_PROP_OBJECT_UPDATE_ID "ObjectUpdateID"
@@ -113,6 +124,11 @@ enum dls_interface_type_ {
 #define DLS_INTERFACE_RELEASE "Release"
 #define DLS_INTERFACE_SET_PROTOCOL_INFO "SetProtocolInfo"
 #define DLS_INTERFACE_PREFER_LOCAL_ADDRESSES "PreferLocalAddresses"
+
+#define DLS_INTERFACE_WHITE_LIST_ENABLE "WhiteListEnable"
+#define DLS_INTERFACE_WHITE_LIST_ADD_ENTRIES "WhiteListAddEntries"
+#define DLS_INTERFACE_WHITE_LIST_REMOVE_ENTRIES "WhiteListRemoveEntries"
+#define DLS_INTERFACE_WHITE_LIST_CLEAR "WhiteListClear"
 
 #define DLS_INTERFACE_FOUND_SERVER "FoundServer"
 #define DLS_INTERFACE_LOST_SERVER "LostServer"
@@ -193,5 +209,8 @@ enum dls_interface_type_ {
 
 #define DLS_INTERFACE_CREATE_REFERENCE "CreateReference"
 #define DLS_INTERFACE_REFPATH "RefPath"
+
+#define DLS_INTERFACE_ENTRY_LIST "EntryList"
+#define DLS_INTERFACE_IS_ENABLED "IsEnabled"
 
 #endif /* DLEYNA_SERVER_INTERFACE_H__ */

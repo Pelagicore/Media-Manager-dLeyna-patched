@@ -45,12 +45,22 @@ enum dlr_task_type_t_ {
 	DLR_TASK_NEXT,
 	DLR_TASK_PREVIOUS,
 	DLR_TASK_OPEN_URI,
+	DLR_TASK_OPEN_NEXT_URI,
+	DLR_TASK_SET_URI,
 	DLR_TASK_SEEK,
+	DLR_TASK_BYTE_SEEK,
 	DLR_TASK_SET_POSITION,
+	DLR_TASK_SET_BYTE_POSITION,
 	DLR_TASK_GOTO_TRACK,
 	DLR_TASK_HOST_URI,
 	DLR_TASK_REMOVE_URI,
-	DLR_TASK_GET_ICON
+	DLR_TASK_GET_ICON,
+	DLR_TASK_WHITE_LIST_ENABLE,
+	DLR_TASK_WHITE_LIST_ADD_ENTRIES,
+	DLR_TASK_WHITE_LIST_REMOVE_ENTRIES,
+	DLR_TASK_WHITE_LIST_CLEAR,
+	DLR_TASK_MANAGER_GET_ALL_PROPS,
+	DLR_TASK_MANAGER_GET_PROP
 };
 typedef enum dlr_task_type_t_ dlr_task_type_t;
 
@@ -78,10 +88,14 @@ typedef struct dlr_task_open_uri_t_ dlr_task_open_uri_t;
 struct dlr_task_open_uri_t_ {
 	gchar *uri;
 	gchar *metadata;
+	const gchar *operation;
+	const gchar *uri_type;
+	const gchar *metadata_type;
 };
 
 typedef struct dlr_task_seek_t_ dlr_task_seek_t;
 struct dlr_task_seek_t_ {
+	guint64 counter_position;
 	gint64 position;
 	guint32 track_number;
 };
@@ -96,6 +110,12 @@ typedef struct dlr_task_get_icon_t_ dlr_task_get_icon_t;
 struct dlr_task_get_icon_t_ {
 	gchar *mime_type;
 	gchar *resolution;
+};
+
+typedef struct dlr_task_white_list_t_ dlr_task_white_list_t;
+struct dlr_task_white_list_t_ {
+	gboolean enabled;
+	GVariant *entries;
 };
 
 typedef struct dlr_task_t_ dlr_task_t;
@@ -116,6 +136,7 @@ struct dlr_task_t_ {
 		dlr_task_host_uri_t host_uri;
 		dlr_task_seek_t seek;
 		dlr_task_get_icon_t get_icon;
+		dlr_task_white_list_t white_list;
 	} ut;
 };
 
@@ -159,8 +180,15 @@ dlr_task_t *dlr_task_previous_new(dleyna_connector_msg_id_t invocation,
 dlr_task_t *dlr_task_seek_new(dleyna_connector_msg_id_t invocation,
 			      const gchar *path, GVariant *parameters);
 
+dlr_task_t *dlr_task_byte_seek_new(dleyna_connector_msg_id_t invocation,
+				   const gchar *path, GVariant *parameters);
+
 dlr_task_t *dlr_task_set_position_new(dleyna_connector_msg_id_t invocation,
 				      const gchar *path, GVariant *parameters);
+
+dlr_task_t *dlr_task_set_byte_position_new(dleyna_connector_msg_id_t invocation,
+					   const gchar *path,
+					   GVariant *parameters);
 
 dlr_task_t *dlr_task_goto_track_new(dleyna_connector_msg_id_t invocation,
 				    const gchar *path, GVariant *parameters);
@@ -170,6 +198,12 @@ dlr_task_t *dlr_task_open_uri_new(dleyna_connector_msg_id_t invocation,
 
 dlr_task_t *dlr_task_open_uri_ex_new(dleyna_connector_msg_id_t invocation,
 				     const gchar *path, GVariant *parameters);
+
+dlr_task_t *dlr_task_open_next_uri_new(dleyna_connector_msg_id_t invocation,
+				       const gchar *path, GVariant *parameters);
+
+dlr_task_t *dlr_task_set_uri_new(dleyna_connector_msg_id_t invocation,
+				 const gchar *path, GVariant *parameters);
 
 dlr_task_t *dlr_task_host_uri_new(dleyna_connector_msg_id_t invocation,
 				  const gchar *path, const gchar *sender,
@@ -181,6 +215,27 @@ dlr_task_t *dlr_task_remove_uri_new(dleyna_connector_msg_id_t invocation,
 
 dlr_task_t *dlr_task_get_icon_new(dleyna_connector_msg_id_t invocation,
 				  const gchar *path, GVariant *parameters);
+
+dlr_task_t *dlr_task_wl_enable_new(dleyna_connector_msg_id_t invocation,
+				   GVariant *parameters);
+
+dlr_task_t *dlr_task_wl_clear_new(dleyna_connector_msg_id_t invocation);
+
+dlr_task_t *dlr_task_wl_add_entries_new(dleyna_connector_msg_id_t invocation,
+					GVariant *parameters);
+
+dlr_task_t *dlr_task_wl_remove_entries_new(dleyna_connector_msg_id_t invocation,
+					   GVariant *parameters);
+
+dlr_task_t *dlr_task_manager_get_prop_new(dleyna_connector_msg_id_t invocation,
+					  const gchar *path,
+					  GVariant *parameters,
+					  GError **error);
+
+dlr_task_t *dlr_task_manager_get_props_new(dleyna_connector_msg_id_t invocation,
+					   const gchar *path,
+					   GVariant *parameters,
+					   GError **error);
 
 void dlr_task_complete(dlr_task_t *task);
 

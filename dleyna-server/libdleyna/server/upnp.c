@@ -163,11 +163,12 @@ static void prv_server_available_cb(GUPnPControlPoint *cp,
 	prv_device_new_ct_t *priv_t;
 
 	udn = gupnp_device_info_get_udn((GUPnPDeviceInfo *)proxy);
-	if (!udn)
-		goto on_error;
 
 	ip_address = gupnp_context_get_host_ip(
 		gupnp_control_point_get_context(cp));
+
+	if (!udn || !ip_address)
+		goto on_error;
 
 	DLEYNA_LOG_DEBUG("UDN %s", udn);
 	DLEYNA_LOG_DEBUG("IP Address %s", ip_address);
@@ -248,11 +249,12 @@ static void prv_server_unavailable_cb(GUPnPControlPoint *cp,
 	DLEYNA_LOG_DEBUG("Enter");
 
 	udn = gupnp_device_info_get_udn((GUPnPDeviceInfo *)proxy);
-	if (!udn)
-		goto on_error;
 
 	ip_address = gupnp_context_get_host_ip(
 		gupnp_control_point_get_context(cp));
+
+	if (!udn || !ip_address)
+		goto on_error;
 
 	DLEYNA_LOG_DEBUG("UDN %s", udn);
 	DLEYNA_LOG_DEBUG("IP Address %s", ip_address);
@@ -381,7 +383,7 @@ dls_upnp_t *dls_upnp_new(dleyna_connector_id_t connection,
 						     dls_device_delete);
 
 	upnp->server_uc_map = g_hash_table_new_full(g_str_hash, g_str_equal,
-						     g_free, NULL);
+						    g_free, NULL);
 
 	dls_prop_maps_new(&upnp->property_map, &upnp->filter_map);
 
@@ -1128,4 +1130,9 @@ void dls_upnp_rescan(dls_upnp_t *upnp)
 	DLEYNA_LOG_DEBUG("re-scanning control points");
 
 	gupnp_context_manager_rescan_control_points(upnp->context_manager);
+}
+
+GUPnPContextManager *dls_upnp_get_context_manager(dls_upnp_t *upnp)
+{
+	return upnp->context_manager;
 }

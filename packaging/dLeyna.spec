@@ -1,6 +1,6 @@
 Name:       dleyna
 Summary:    dLeyna hosts a number of DLNA middleware components
-Version:    0.2.0
+Version:    0.2.1
 Release:    0
 Group:      System/Libraries
 License:    LGPLv2+
@@ -58,8 +58,8 @@ rm -rf %{buildroot}
 %{_libexecdir}/dleyna-server-service
 %{_libexecdir}/dleyna-renderer-service
 %{_libdir}/libdleyna-core-1.0.so.*
-%{_libdir}/libdleyna-server-1.0.so.*
-%{_libdir}/libdleyna-renderer-1.0.so.*
+%{_libdir}/dleyna-server/libdleyna-server-1.0.so.*
+%{_libdir}/dleyna-renderer/libdleyna-renderer-1.0.so.*
 %{_libdir}/dleyna-1.0/connectors/libdleyna-connector-dbus.so
 %{_sysconfdir}/dleyna-server-service.conf
 %{_sysconfdir}/dleyna-renderer-service.conf
@@ -69,8 +69,8 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 %{_includedir}/dleyna-1.0/libdleyna
 %{_libdir}/libdleyna-core-1.0.so
-%{_libdir}/libdleyna-server-1.0.so
-%{_libdir}/libdleyna-renderer-1.0.so
+%{_libdir}/dleyna-server/libdleyna-server-1.0.so
+%{_libdir}/dleyna-renderer/libdleyna-renderer-1.0.so
 %{_libdir}/pkgconfig/dleyna-connector-dbus-1.0.pc
 %{_libdir}/pkgconfig/dleyna-core-1.0.pc
 %{_libdir}/pkgconfig/dleyna-server-1.0.pc

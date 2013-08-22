@@ -1,6 +1,6 @@
 libdleyna_rendererincdir = $(includedir)/dleyna-1.0/libdleyna/renderer
 
-DLEYNA_RENDERER_VERSION = 1:2:0
+DLEYNA_RENDERER_VERSION = 1:3:0
 
 AM_CFLAGS =	$(GLIB_CFLAGS)				\
 		$(GIO_CFLAGS)				\
@@ -14,7 +14,7 @@ AM_CFLAGS =	$(GLIB_CFLAGS)				\
 
 ACLOCAL_AMFLAGS = -I m4 ${ACLOCAL_FLAGS}
 
-lib_LTLIBRARIES = libdleyna-renderer-1.0.la
+pkglib_LTLIBRARIES = libdleyna-renderer-1.0.la
 
 libdleyna_rendererinc_HEADERS = 	control-point-renderer.h
 
@@ -25,6 +25,7 @@ libdleyna_renderer_1_0_la_SOURCES =	$(libdleyna_rendererinc_HEADERS) \
 					async.c				 \
 					device.c	 		 \
 					host-service.c			 \
+					manager.c			 \
 					server.c			 \
 					task.c		 		 \
 					upnp.c
@@ -58,6 +59,7 @@ EXTRA_DIST = 	$(sysconf_DATA)			\
 		device.h			\
 		host-service.h			\
 		prop-defs.h			\
+		manager.h			\
 		server.h			\
 		task.h				\
 		upnp.h

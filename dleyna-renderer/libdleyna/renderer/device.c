@@ -44,6 +44,14 @@ struct dlr_device_data_t_ {
 	dlr_device_local_cb_t local_cb;
 };
 
+typedef struct dlr_rc_event_t_ dlr_rc_event_t;
+struct dlr_rc_event_t_ {
+	dlr_device_t *device;
+	guint dev_volume;
+	guint mute;
+	guint source_id;
+};
+
 /* Private structure used in chain task */
 typedef struct prv_new_device_ct_t_ prv_new_device_ct_t;
 struct prv_new_device_ct_t_ {
@@ -73,7 +81,7 @@ static void prv_rc_last_change_cb(GUPnPServiceProxy *proxy,
 				  GValue *value,
 				  gpointer user_data);
 
-static void prv_props_update(dlr_device_t *device, dlr_task_t *task);
+static gboolean prv_props_update(dlr_device_t *device, dlr_task_t *task);
 
 static void prv_get_rates_values(GList *allowed_tp_speeds,
 				 GVariant **mpris_tp_speeds,
@@ -202,7 +210,7 @@ static void prv_emit_signal_properties_changed(dlr_device_t *device,
 					       const char *interface,
 					       GVariant *changed_props)
 {
-#if DLR_LOG_LEVEL & DLR_LOG_LEVEL_DEBUG
+#if DLEYNA_LOG_LEVEL & DLEYNA_LOG_LEVEL_DEBUG
 	gchar *params;
 #endif
 	GVariant *val = g_variant_ref_sink(g_variant_new("(s@a{sv}as)",
@@ -215,7 +223,7 @@ static void prv_emit_signal_properties_changed(dlr_device_t *device,
 			 DLR_INTERFACE_PROPERTIES_CHANGED,
 			 device->path);
 
-#if DLR_LOG_LEVEL & DLR_LOG_LEVEL_DEBUG
+#if DLEYNA_LOG_LEVEL & DLEYNA_LOG_LEVEL_DEBUG
 	params = g_variant_print(val, FALSE);
 	DLEYNA_LOG_DEBUG("Params: %s", params);
 	g_free(params);
@@ -393,6 +401,7 @@ void dlr_device_delete(void *device)
 			g_ptr_array_free(dev->dlna_transport_play_speeds, TRUE);
 		if (dev->mpris_transport_play_speeds)
 			g_variant_unref(dev->mpris_transport_play_speeds);
+		g_hash_table_unref(dev->rc_event_handlers);
 		g_free(dev->rate);
 
 		g_free(dev->icon.mime_type);
@@ -745,7 +754,7 @@ static GUPnPServiceProxyAction *prv_declare(dleyna_service_task_t *task,
 				device->connection,
 				device->path,
 				FALSE,
-				i,
+				dlr_renderer_get_interface_name(i),
 				table + i);
 
 		if (!device->ids[i]) {
@@ -759,6 +768,15 @@ on_error:
 DLEYNA_LOG_DEBUG("Exit");
 
 	return NULL;
+}
+
+static void prv_free_rc_event(gpointer user_data)
+{
+	dlr_rc_event_t *event = user_data;
+
+	if (event->source_id)
+		g_source_remove(event->source_id);
+	g_free(event);
 }
 
 void dlr_device_construct(
@@ -821,6 +839,9 @@ dlr_device_t *dlr_device_new(
 	dev->contexts = g_ptr_array_new_with_free_func(prv_dlr_context_delete);
 	dev->path = new_path;
 	dev->rate = g_strdup("1");
+	dev->rc_event_handlers = g_hash_table_new_full(g_int_hash, g_int_equal,
+						       g_free,
+						       prv_free_rc_event);
 
 	prv_props_init(&dev->props);
 
@@ -1073,6 +1094,31 @@ exit:
 	return;
 }
 
+static GVariant *prv_as_prop_from_list(GList *list)
+{
+	GVariantBuilder vb;
+
+	g_variant_builder_init(&vb, G_VARIANT_TYPE("as"));
+
+	do {
+		g_variant_builder_add(&vb, "s", list->data);
+	} while ((list = g_list_next(list)));
+
+	return g_variant_ref_sink(g_variant_builder_end(&vb));
+}
+
+static void prv_update_prop_dlna_device_classes(GUPnPDeviceInfo *proxy,
+						GHashTable *props)
+{
+	GList *dlna_classes =
+		gupnp_device_info_list_dlna_device_class_identifier(proxy);
+
+	if (dlna_classes != NULL)
+		g_hash_table_insert(props,
+				    DLR_INTERFACE_PROP_DLNA_DEVICE_CLASSES,
+				    prv_as_prop_from_list(dlna_classes));
+}
+
 static void prv_add_actions(dlr_device_t *device,
 			    const gchar *actions,
 			    GVariantBuilder *changed_props_vb)
@@ -1084,12 +1130,18 @@ static void prv_add_actions(dlr_device_t *device,
 	gboolean play = FALSE;
 	gboolean ppause = FALSE;
 	gboolean seek = FALSE;
+	gboolean timeseek_missing = FALSE;
+	gboolean byteseek = FALSE;
 	gboolean next = FALSE;
 	gboolean previous = FALSE;
 	GVariant *val;
 	GRegex *regex;
 	gchar *tmp_str;
 	gchar **speeds;
+	GVariantIter iter;
+	gchar *dlna_device_class;
+	gchar *pos;
+	GUPnPDeviceInfo *info;
 
 	regex = g_regex_new("\\\\,", 0, 0, NULL);
 	tmp_str = g_regex_replace_literal(regex, actions, -1, 0, "*", 0, NULL);
@@ -1099,6 +1151,33 @@ static void prv_add_actions(dlr_device_t *device,
 
 	true_val = g_variant_ref_sink(g_variant_new_boolean(TRUE));
 	false_val = g_variant_ref_sink(g_variant_new_boolean(FALSE));
+
+	info = (GUPnPDeviceInfo *)dlr_device_get_context(device)->device_proxy;
+
+	prv_update_prop_dlna_device_classes(info, device->props.device_props);
+
+	val = g_hash_table_lookup(device->props.device_props,
+				  DLR_INTERFACE_PROP_DLNA_DEVICE_CLASSES);
+
+	/* If this device is not dlna compatible, there is no need */
+	/* to check for “X_DLNA_SeekTime” */
+	if (val) {
+		g_variant_iter_init(&iter, val);
+		while (g_variant_iter_next(&iter, "s", &dlna_device_class)) {
+			/* Could be DMR-version or M-DMR-version*/
+			pos = g_strrstr(dlna_device_class, "DMR-");
+			if (!pos || pos + 4 == 0 || strtof(pos + 4, 0) < 1.5f) {
+				g_free(dlna_device_class);
+				continue;
+			}
+
+			DLEYNA_LOG_DEBUG("DLNA version ≥ 1.50 pour %s",
+					 device->path);
+			timeseek_missing = TRUE;
+			g_free(dlna_device_class);
+			break;
+		}
+	}
 
 	while (parts[i]) {
 		g_strstrip(parts[i]);
@@ -1114,11 +1193,15 @@ static void prv_add_actions(dlr_device_t *device,
 		} else if (!strcmp(parts[i], "Previous")) {
 			previous = TRUE;
 		} else if (!strncmp(parts[i], "X_DLNA_PS=",
-			 strlen("X_DLNA_PS="))) {
+						strlen("X_DLNA_PS="))) {
 			speeds = g_strsplit(parts[i] + strlen("X_DLNA_PS="),
 					    "*", 0);
 			prv_add_dlna_speeds(device, speeds, changed_props_vb);
 			g_strfreev(speeds);
+		} else if (!strcmp(parts[i], "X_DLNA_SeekTime")) {
+			timeseek_missing = FALSE;
+		} else if (!strcmp(parts[i], "X_DLNA_SeekByte")) {
+			byteseek = TRUE;
 		}
 		++i;
 	}
@@ -1140,10 +1223,16 @@ static void prv_add_actions(dlr_device_t *device,
 			 DLR_INTERFACE_PROP_CAN_PAUSE, val,
 			 changed_props_vb);
 
-	val = seek ? true_val : false_val;
+	val = seek && !timeseek_missing ? true_val : false_val;
 	g_variant_ref(val);
 	prv_change_props(device->props.player_props,
 			 DLR_INTERFACE_PROP_CAN_SEEK, val,
+			 changed_props_vb);
+
+	val = seek && byteseek ? true_val : false_val;
+	g_variant_ref(val);
+	prv_change_props(device->props.player_props,
+			 DLR_INTERFACE_PROP_CAN_BYTE_SEEK, val,
 			 changed_props_vb);
 
 	val = next ? true_val : false_val;
@@ -1255,6 +1344,19 @@ static void prv_add_reltime(dlr_device_t *device,
 	val = g_variant_ref_sink(g_variant_new_int64(pos));
 	prv_change_props(device->props.player_props,
 			 DLR_INTERFACE_PROP_POSITION, val,
+			 changed_props_vb);
+}
+
+static void prv_add_relcount(dlr_device_t *device,
+			    const gchar *relcount,
+			    GVariantBuilder *changed_props_vb)
+{
+	GVariant *val;
+	guint64 count = strtoll(relcount, NULL, 10);
+
+	val = g_variant_ref_sink(g_variant_new_uint64(count));
+	prv_change_props(device->props.player_props,
+			 DLR_INTERFACE_PROP_BYTE_POSITION, val,
 			 changed_props_vb);
 }
 
@@ -1516,50 +1618,37 @@ on_error:
 	g_object_unref(parser);
 }
 
-static void prv_rc_last_change_cb(GUPnPServiceProxy *proxy,
-			       const char *variable,
-			       GValue *value,
-			       gpointer user_data)
+static gboolean prv_process_rc_last_change(gpointer user_data)
 {
-	GUPnPLastChangeParser *parser;
-	dlr_device_t *device = user_data;
+	dlr_rc_event_t *event = user_data;
 	GVariantBuilder *changed_props_vb;
 	GVariant *changed_props;
 	GVariant *val;
-	guint dev_volume = G_MAXUINT;
 	double mpris_volume;
-	guint mute = G_MAXUINT;
+	dlr_device_t *device = event->device;
+	gint source_id;
 
-	parser = gupnp_last_change_parser_new();
-
-	if (!gupnp_last_change_parser_parse_last_change(
-		    parser, 0,
-		    g_value_get_string(value),
-		    NULL,
-		    "Volume", G_TYPE_UINT, &dev_volume,
-		    "Mute", G_TYPE_UINT, &mute,
-		    NULL))
-		goto on_error;
-
-	if (device->props.synced == FALSE)
-		prv_props_update(device, NULL);
+	if (!device->props.synced && !prv_props_update(device, NULL))
+		goto on_lost_device;
 
 	if (device->max_volume == 0)
 		goto on_error;
 
 	changed_props_vb = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"));
 
-	if (dev_volume != G_MAXUINT) {
-		mpris_volume = (double)dev_volume / (double)device->max_volume;
+	if (event->dev_volume != G_MAXUINT) {
+		mpris_volume = (double) event->dev_volume /
+			(double) device->max_volume;
 		val = g_variant_ref_sink(g_variant_new_double(mpris_volume));
 		prv_change_props(device->props.player_props,
 				 DLR_INTERFACE_PROP_VOLUME, val,
 				 changed_props_vb);
 	}
 
-	if (mute != G_MAXUINT) {
+	if (event->mute != G_MAXUINT) {
 		val = g_variant_ref_sink(
-				g_variant_new_boolean(mute ? TRUE : FALSE));
+				g_variant_new_boolean(event->mute ? TRUE
+						      : FALSE));
 		prv_change_props(device->props.player_props,
 				 DLR_INTERFACE_PROP_MUTE, val,
 				 changed_props_vb);
@@ -1572,6 +1661,54 @@ static void prv_rc_last_change_cb(GUPnPServiceProxy *proxy,
 					   changed_props);
 	g_variant_unref(changed_props);
 	g_variant_builder_unref(changed_props_vb);
+
+on_error:
+	source_id = (gint) event->source_id;
+	event->source_id = 0;
+	g_hash_table_remove(device->rc_event_handlers, &source_id);
+
+on_lost_device:
+
+	return FALSE;
+}
+
+static void prv_rc_last_change_cb(GUPnPServiceProxy *proxy,
+			       const char *variable,
+			       GValue *value,
+			       gpointer user_data)
+{
+	GUPnPLastChangeParser *parser;
+	dlr_rc_event_t *event;
+	guint dev_volume = G_MAXUINT;
+	guint mute = G_MAXUINT;
+	gint *key;
+
+	parser = gupnp_last_change_parser_new();
+
+	if (!gupnp_last_change_parser_parse_last_change(
+		    parser, 0,
+		    g_value_get_string(value),
+		    NULL,
+		    "Volume", G_TYPE_UINT, &dev_volume,
+		    "Mute", G_TYPE_UINT, &mute,
+		    NULL))
+		goto on_error;
+
+	event = g_new0(dlr_rc_event_t, 1);
+	event->dev_volume = dev_volume;
+	event->mute = mute;
+	event->device = user_data;
+
+	/* We cannot execute the code in prv_process_rc_last_change directly
+	   in this function as it can cause the main loop to be iterated, which
+	   may cause a crash when we return back to GUPnP.  This code will be
+	   re-written once we can cancel calls to retrieve the service
+	   introspection data. */
+
+	event->source_id = g_idle_add(prv_process_rc_last_change, event);
+	key = g_new(gint, 1);
+	*key = (gint) event->source_id;
+	g_hash_table_insert(event->device->rc_event_handlers, key, event);
 
 on_error:
 
@@ -1597,6 +1734,7 @@ static void prv_get_position_info_cb(GUPnPServiceProxy *proxy,
 				     gpointer user_data)
 {
 	gchar *rel_pos = NULL;
+	gchar *rel_cnt = NULL;
 	const gchar *message;
 	gboolean end;
 	dlr_async_task_t *cb_data = user_data;
@@ -1604,24 +1742,54 @@ static void prv_get_position_info_cb(GUPnPServiceProxy *proxy,
 	dlr_device_data_t *device_data = cb_data->private;
 	GVariantBuilder *changed_props_vb;
 	GVariant *changed_props;
+	gint expected_props = 2;
 
 	end = gupnp_service_proxy_end_action(cb_data->proxy, cb_data->action,
-					     &error, "RelTime",
-					     G_TYPE_STRING, &rel_pos, NULL);
-	if (!end || (rel_pos == NULL)) {
-		message = (error != NULL) ? error->message : "Invalid result";
-		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
-					     DLEYNA_ERROR_OPERATION_FAILED,
-					     "GetPositionInfo operation failed: %s",
-					     message);
+					     &error,
+					     "RelTime", G_TYPE_STRING, &rel_pos,
+					     "RelCount", G_TYPE_STRING,
+					     &rel_cnt, NULL);
+
+	if (!end && !cb_data->task.type == DLR_TASK_GET_ALL_PROPS)
 		goto on_error;
+
+	if (rel_pos == NULL) {
+		expected_props--;
+		if (cb_data->task.type == DLR_TASK_GET_ALL_PROPS) {
+			/* Do not fail, just remove the property */
+			g_hash_table_remove(cb_data->device->props.player_props,
+					    DLR_INTERFACE_PROP_POSITION);
+		} else if (!strcmp(cb_data->task.ut.get_prop.prop_name,
+				      DLR_INTERFACE_PROP_POSITION)) {
+			goto on_error;
+		}
 	}
+
+	if (rel_cnt == NULL) {
+		expected_props--;
+		if (cb_data->task.type == DLR_TASK_GET_ALL_PROPS) {
+			/* Do not fail, just remove the property */
+			g_hash_table_remove(cb_data->device->props.player_props,
+					    DLR_INTERFACE_PROP_BYTE_POSITION);
+		} else if (!strcmp(cb_data->task.ut.get_prop.prop_name,
+				      DLR_INTERFACE_PROP_BYTE_POSITION)) {
+			goto on_error;
+		}
+	}
+
+	if (!expected_props)
+		goto out;
 
 	changed_props_vb = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"));
 
-	g_strstrip(rel_pos);
-	prv_add_reltime(cb_data->device, rel_pos, changed_props_vb);
-	g_free(rel_pos);
+	if (rel_pos != NULL) {
+		g_strstrip(rel_pos);
+		prv_add_reltime(cb_data->device, rel_pos, changed_props_vb);
+	}
+	if (rel_cnt != NULL) {
+		g_strstrip(rel_cnt);
+		prv_add_relcount(cb_data->device, rel_cnt, changed_props_vb);
+	}
 
 	changed_props = g_variant_ref_sink(
 				g_variant_builder_end(changed_props_vb));
@@ -1631,7 +1799,22 @@ static void prv_get_position_info_cb(GUPnPServiceProxy *proxy,
 	g_variant_unref(changed_props);
 	g_variant_builder_unref(changed_props_vb);
 
+	goto out;
+
 on_error:
+
+	message = (error != NULL) ? error->message :
+					"Invalid result";
+	cb_data->error = g_error_new(
+				DLEYNA_SERVER_ERROR,
+				DLEYNA_ERROR_OPERATION_FAILED,
+				"GetPositionInfo operation failed: %s",
+				message);
+
+out:
+
+	g_free(rel_pos);
+	g_free(rel_cnt);
 
 	if (error != NULL)
 		g_error_free(error);
@@ -1778,21 +1961,42 @@ exit:
 	return;
 }
 
-static void prv_get_av_service_states_values(GUPnPServiceProxy *av_proxy,
-					     GVariant **mpris_tp_speeds,
-					     GPtrArray **upnp_tp_speeds,
-					     double *min_rate,
-					     double *max_rate)
+static gboolean prv_get_av_service_states_values(GUPnPServiceProxy *av_proxy,
+						 GVariant **mpris_tp_speeds,
+						 GPtrArray **upnp_tp_speeds,
+						 double *min_rate,
+						 double *max_rate)
 {
 	const GUPnPServiceStateVariableInfo *svi;
 	GUPnPServiceIntrospection *introspection;
 	GError *error = NULL;
 	GVariant *speeds = NULL;
 	GList *allowed_values;
+	gpointer weak_ref = NULL;
+	gboolean  device_alive = TRUE;
 
-	introspection =	gupnp_service_info_get_introspection(
-						GUPNP_SERVICE_INFO(av_proxy),
-						&error);
+	/* TODO: this weak_ref hack is needed as
+	   gupnp_service_info_get_introspection iterates the main loop.
+	   This can result in our device getting deleted before this
+	   function returns.  Ultimately, this code needs to be re-written
+	   to use gupnp_service_info_get_introspection_async but this cannot
+	   really be done until GUPnP provides a way to cancel this function. */
+
+	weak_ref = av_proxy;
+	g_object_add_weak_pointer(G_OBJECT(av_proxy), &weak_ref);
+
+	introspection = gupnp_service_info_get_introspection(
+		GUPNP_SERVICE_INFO(av_proxy),
+		&error);
+
+	if (!weak_ref) {
+		DLEYNA_LOG_WARNING("Lost device during introspection call");
+		device_alive = FALSE;
+		goto exit;
+	}
+
+	g_object_remove_weak_pointer(G_OBJECT(av_proxy), &weak_ref);
+
 	if (error != NULL) {
 		DLEYNA_LOG_DEBUG(
 			"failed to fetch AV service introspection file");
@@ -1821,19 +2025,40 @@ static void prv_get_av_service_states_values(GUPnPServiceProxy *av_proxy,
 
 exit:
 
-	return;
+	return device_alive;
 }
 
-static void prv_get_rc_service_states_values(GUPnPServiceProxy *rc_proxy,
-					     guint *max_volume)
+static gboolean prv_get_rc_service_states_values(GUPnPServiceProxy *rc_proxy,
+						 guint *max_volume)
 {
 	const GUPnPServiceStateVariableInfo *svi;
 	GUPnPServiceIntrospection *introspection;
 	GError *error = NULL;
+	gpointer weak_ref = NULL;
+	gboolean device_alive = TRUE;
 
-	introspection =	gupnp_service_info_get_introspection(
-						GUPNP_SERVICE_INFO(rc_proxy),
-						&error);
+	/* TODO: this weak_ref hack is needed as
+	   gupnp_service_info_get_introspection iterates the main loop.
+	   This can result in our device getting deleted before this
+	   function returns.  Ultimately, this code needs to be re-written
+	   to use gupnp_service_info_get_introspection_async but this cannot
+	   really be done until GUPnP provides a way to cancel this function. */
+
+	weak_ref = rc_proxy;
+	g_object_add_weak_pointer(G_OBJECT(rc_proxy), &weak_ref);
+
+	introspection = gupnp_service_info_get_introspection(
+		GUPNP_SERVICE_INFO(rc_proxy),
+		&error);
+
+	if (!weak_ref) {
+		DLEYNA_LOG_WARNING("Lost device during introspection call");
+		device_alive = FALSE;
+		goto exit;
+	}
+
+	g_object_remove_weak_pointer(G_OBJECT(rc_proxy), &weak_ref);
+
 	if (error != NULL) {
 		DLEYNA_LOG_DEBUG(
 			"failed to fetch RC service introspection file");
@@ -1852,13 +2077,15 @@ static void prv_get_rc_service_states_values(GUPnPServiceProxy *rc_proxy,
 
 exit:
 
-	return;
+	return device_alive;
 }
 
 static void prv_update_device_props(GUPnPDeviceInfo *proxy, GHashTable *props)
 {
 	GVariant *val;
 	gchar *str;
+
+	prv_update_prop_dlna_device_classes(proxy, props);
 
 	val = g_variant_ref_sink(g_variant_new_string(
 				gupnp_device_info_get_device_type(proxy)));
@@ -1913,7 +2140,6 @@ static void prv_update_device_props(GUPnPDeviceInfo *proxy, GHashTable *props)
 	val = g_variant_ref_sink(g_variant_new_string(str));
 	g_hash_table_insert(props, DLR_INTERFACE_PROP_PRESENTATION_URL, val);
 	g_free(str);
-
 }
 
 static void prv_add_player_speed_props(GHashTable *player_props,
@@ -1945,7 +2171,7 @@ static void prv_add_player_speed_props(GHashTable *player_props,
 	}
 }
 
-static void prv_props_update(dlr_device_t *device, dlr_task_t *task)
+static gboolean prv_props_update(dlr_device_t *device, dlr_task_t *task)
 {
 	GVariant *val;
 	GUPnPDeviceInfo *info;
@@ -1954,6 +2180,7 @@ static void prv_props_update(dlr_device_t *device, dlr_task_t *task)
 	dlr_props_t *props = &device->props;
 	GVariantBuilder *changed_props_vb;
 	GVariant *changed_props;
+	gboolean device_alive = TRUE;
 
 	context = dlr_device_get_context(device);
 
@@ -1981,21 +2208,36 @@ static void prv_props_update(dlr_device_t *device, dlr_task_t *task)
 	g_hash_table_insert(props->root_props, DLR_INTERFACE_PROP_IDENTITY,
 			    g_variant_ref(val));
 
-	changed_props_vb = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"));
-
 	service_proxies = &context->service_proxies;
 
+	/* TODO: We should not retrieve these values here.  They should be
+	   retrieved during device construction. */
+
 	if (service_proxies->av_proxy)
-		prv_get_av_service_states_values(
-					service_proxies->av_proxy,
-					&device->mpris_transport_play_speeds,
-					&device->transport_play_speeds,
-					&device->min_rate,
-					&device->max_rate);
+		if (!prv_get_av_service_states_values(
+			    service_proxies->av_proxy,
+			    &device->mpris_transport_play_speeds,
+			    &device->transport_play_speeds,
+			    &device->min_rate,
+			    &device->max_rate)) {
+			DLEYNA_LOG_DEBUG("Lost Device AV");
+
+			device_alive = FALSE;
+			goto on_lost_device;
+		}
+
+	/* TODO: We should not retrieve these values here.  They should be
+	   retrieved during device construction. */
 
 	if (service_proxies->rc_proxy)
-		prv_get_rc_service_states_values(service_proxies->rc_proxy,
-						 &device->max_volume);
+		if (!prv_get_rc_service_states_values(service_proxies->rc_proxy,
+						      &device->max_volume)) {
+			DLEYNA_LOG_DEBUG("Lost Device RC");
+			device_alive = FALSE;
+			goto on_lost_device;
+		}
+
+	changed_props_vb = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"));
 
 	prv_add_player_speed_props(device->props.player_props,
 				   device->min_rate, device->max_rate,
@@ -2012,6 +2254,10 @@ static void prv_props_update(dlr_device_t *device, dlr_task_t *task)
 					   changed_props);
 	g_variant_unref(changed_props);
 	g_variant_builder_unref(changed_props_vb);
+
+on_lost_device:
+
+	return device_alive;
 }
 
 static void prv_complete_get_prop(dlr_async_task_t *cb_data)
@@ -2125,7 +2371,6 @@ static GVariant *prv_get_rate_value_from_double(GVariant *params,
 
 	g_variant_iter_init(&iter, tps);
 	while (g_variant_iter_next(&iter, "d", &tps_value)) {
-
 		if (fabs(mpris_rate - tps_value) <= 0.01) {
 			val = g_variant_ref_sink(
 				g_variant_new_double(tps_value));
@@ -2267,7 +2512,9 @@ void dlr_device_get_prop(dlr_device_t *device, dlr_task_t *task,
 	if ((!strcmp(get_prop->interface_name, DLR_INTERFACE_PLAYER) ||
 	     !strcmp(get_prop->interface_name, "")) &&
 	    (!strcmp(task->ut.get_prop.prop_name,
-			DLR_INTERFACE_PROP_POSITION))) {
+			DLR_INTERFACE_PROP_POSITION) ||
+	     !strcmp(task->ut.get_prop.prop_name,
+			DLR_INTERFACE_PROP_BYTE_POSITION))) {
 		/* Need to read the current position.  This property is not
 		   evented */
 
@@ -2284,10 +2531,15 @@ void dlr_device_get_prop(dlr_device_t *device, dlr_task_t *task,
 		cb_data->cb = cb;
 		cb_data->device = device;
 
-		if (!device->props.synced)
-			prv_props_update(device, task);
+		if (!device->props.synced && !prv_props_update(device, task)) {
+			cb_data->error = g_error_new(
+				DLEYNA_SERVER_ERROR,
+				DLEYNA_ERROR_OPERATION_FAILED,
+				"Lost Device");
+		} else {
+			prv_get_prop(cb_data);
+		}
 
-		prv_get_prop(cb_data);
 		(void) g_idle_add(dlr_async_task_complete, cb_data);
 	}
 }
@@ -2299,28 +2551,28 @@ void dlr_device_get_all_props(dlr_device_t *device, dlr_task_t *task,
 	dlr_task_get_props_t *get_props = &task->ut.get_props;
 	dlr_device_data_t *device_cb_data;
 
-	if (!device->props.synced)
-		prv_props_update(device, task);
+	cb_data->cb = cb;
+	cb_data->device = device;
 
-	if ((!strcmp(get_props->interface_name, DLR_INTERFACE_PLAYER) ||
+	if (!device->props.synced && !prv_props_update(device, task)) {
+		cb_data->error = g_error_new(
+			DLEYNA_SERVER_ERROR,
+			DLEYNA_ERROR_OPERATION_FAILED,
+			"Lost Device");
+		(void) g_idle_add(dlr_async_task_complete, cb_data);
+	} else if ((!strcmp(get_props->interface_name, DLR_INTERFACE_PLAYER) ||
 	     !strcmp(get_props->interface_name, ""))) {
-
 		/* Need to read the current position.  This property is not
 		   evented */
 
 		device_cb_data = g_new(dlr_device_data_t, 1);
 		device_cb_data->local_cb = prv_complete_get_props;
 
-		cb_data->cb = cb;
 		cb_data->private = device_cb_data;
-		cb_data->device = device;
 		cb_data->free_private = g_free;
 
 		prv_get_position_info(cb_data);
 	} else {
-		cb_data->cb = cb;
-		cb_data->device = device;
-
 		prv_get_props(cb_data);
 		(void) g_idle_add(dlr_async_task_complete, cb_data);
 	}
@@ -2495,6 +2747,9 @@ static void prv_open_uri_cb(GUPnPServiceProxy *proxy,
 {
 	dlr_async_task_t *cb_data = user_data;
 	GError *upnp_error = NULL;
+#if DLEYNA_LOG_LEVEL & DLEYNA_LOG_LEVEL_DEBUG
+	gchar *type;
+#endif
 
 	if (!gupnp_service_proxy_end_action(cb_data->proxy, cb_data->action,
 					    &upnp_error, NULL)) {
@@ -2504,15 +2759,42 @@ static void prv_open_uri_cb(GUPnPServiceProxy *proxy,
 					     upnp_error->message);
 		g_error_free(upnp_error);
 
-		goto exit;
+		goto on_error;
 	}
 
 	prv_reset_transport_speed_props(cb_data->device);
 
-exit:
+#if DLEYNA_LOG_LEVEL & DLEYNA_LOG_LEVEL_DEBUG
+	if (cb_data->task.type == DLR_TASK_OPEN_URI)
+		type = "OPEN URI";
+	else if (cb_data->task.type == DLR_TASK_OPEN_NEXT_URI)
+		type = "OPEN NEXT URI";
+	else if (cb_data->task.type == DLR_TASK_SET_URI)
+		type = "SET URI";
+
+	DLEYNA_LOG_DEBUG("Task: %s", type);
+#endif
+
+	if (cb_data->task.type == DLR_TASK_OPEN_URI) {
+		cb_data->action =
+			gupnp_service_proxy_begin_action(
+						cb_data->proxy,
+						"Play",
+						prv_simple_call_cb,
+						cb_data,
+						"InstanceID", G_TYPE_INT, 0,
+						"Speed", G_TYPE_STRING,
+						cb_data->device->rate, NULL);
+		goto on_exit;
+	}
+
+on_error:
 
 	(void) g_idle_add(dlr_async_task_complete, cb_data);
 	g_cancellable_disconnect(cb_data->cancellable, cb_data->cancel_id);
+
+on_exit:
+	return;
 }
 
 void dlr_device_open_uri(dlr_device_t *device, dlr_task_t *task,
@@ -2525,6 +2807,7 @@ void dlr_device_open_uri(dlr_device_t *device, dlr_task_t *task,
 
 	DLEYNA_LOG_INFO("URI: %s", open_uri_data->uri);
 	DLEYNA_LOG_INFO("METADATA: %s", metadata ? metadata : "Not provided");
+	DLEYNA_LOG_INFO("ACTION: %s", open_uri_data->operation);
 
 	context = dlr_device_get_context(device);
 	cb_data->cb = cb;
@@ -2541,13 +2824,14 @@ void dlr_device_open_uri(dlr_device_t *device, dlr_task_t *task,
 
 	cb_data->action =
 		gupnp_service_proxy_begin_action(cb_data->proxy,
-						 "SetAVTransportURI",
+						 open_uri_data->operation,
 						 prv_open_uri_cb,
 						 cb_data,
 						 "InstanceID", G_TYPE_INT, 0,
-						 "CurrentURI", G_TYPE_STRING,
+						 open_uri_data->uri_type,
+						 G_TYPE_STRING,
 						 open_uri_data->uri,
-						 "CurrentURIMetaData",
+						 open_uri_data->metadata_type,
 						 G_TYPE_STRING,
 						 metadata ? metadata : "",
 						 NULL);
@@ -2568,8 +2852,11 @@ static void prv_device_set_position(dlr_device_t *device, dlr_task_t *task,
 
 	if (!strcmp(pos_type, "TRACK_NR"))
 		position = g_strdup_printf("%u", seek_data->track_number);
-	else
+	else if (g_strrstr(pos_type, "_TIME") != NULL)
 		position = prv_int64_to_duration(seek_data->position);
+	else
+		position = g_strdup_printf("%llu",
+			(long long unsigned int)seek_data->counter_position);
 
 	DLEYNA_LOG_INFO("set %s position : %s", pos_type, position);
 
@@ -2601,13 +2888,19 @@ static void prv_device_set_position(dlr_device_t *device, dlr_task_t *task,
 void dlr_device_seek(dlr_device_t *device, dlr_task_t *task,
 		     dlr_upnp_task_complete_t cb)
 {
-	prv_device_set_position(device, task,  "REL_TIME", cb);
+	if (task->type == DLR_TASK_SEEK)
+		prv_device_set_position(device, task,  "REL_TIME", cb);
+	else
+		prv_device_set_position(device, task,  "REL_COUNT", cb);
 }
 
 void dlr_device_set_position(dlr_device_t *device, dlr_task_t *task,
 			     dlr_upnp_task_complete_t cb)
 {
-	prv_device_set_position(device, task,  "ABS_TIME", cb);
+	if (task->type == DLR_TASK_SET_POSITION)
+		prv_device_set_position(device, task,  "ABS_TIME", cb);
+	else
+		prv_device_set_position(device, task,  "ABS_COUNT", cb);
 }
 
 void dlr_device_goto_track(dlr_device_t *device, dlr_task_t *task,

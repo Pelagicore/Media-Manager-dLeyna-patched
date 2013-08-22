@@ -162,11 +162,11 @@ static void prv_server_available_cb(GUPnPControlPoint *cp,
 
 	udn = gupnp_device_info_get_udn((GUPnPDeviceInfo *)proxy);
 
-	if (!udn)
-		goto on_error;
-
 	ip_address = gupnp_context_get_host_ip(
 		gupnp_control_point_get_context(cp));
+
+	if (!udn || !ip_address)
+		goto on_error;
 
 	DLEYNA_LOG_DEBUG("UDN %s", udn);
 	DLEYNA_LOG_DEBUG("IP Address %s", ip_address);
@@ -248,11 +248,11 @@ static void prv_server_unavailable_cb(GUPnPControlPoint *cp,
 
 	udn = gupnp_device_info_get_udn((GUPnPDeviceInfo *)proxy);
 
-	if (!udn)
-		goto on_error;
-
 	ip_address = gupnp_context_get_host_ip(
 		gupnp_control_point_get_context(cp));
+
+	if (!udn || !ip_address)
+		goto on_error;
 
 	DLEYNA_LOG_DEBUG("UDN %s", udn);
 	DLEYNA_LOG_DEBUG("IP Address %s", ip_address);
@@ -411,12 +411,12 @@ GVariant *dlr_upnp_get_server_ids(dlr_upnp_t *upnp)
 
 	DLEYNA_LOG_DEBUG("Enter");
 
-	g_variant_builder_init(&vb, G_VARIANT_TYPE("as"));
+	g_variant_builder_init(&vb, G_VARIANT_TYPE("ao"));
 	g_hash_table_iter_init(&iter, upnp->server_udn_map);
 
 	while (g_hash_table_iter_next(&iter, NULL, &value)) {
 		device = value;
-		g_variant_builder_add(&vb, "s", device->path);
+		g_variant_builder_add(&vb, "o", device->path);
 	}
 
 	DLEYNA_LOG_DEBUG("Exit");
@@ -845,4 +845,9 @@ void dlr_upnp_rescan(dlr_upnp_t *upnp)
 	DLEYNA_LOG_DEBUG("re-scanning control points");
 
 	gupnp_context_manager_rescan_control_points(upnp->context_manager);
+}
+
+GUPnPContextManager *dlr_upnp_get_context_manager(dlr_upnp_t *upnp)
+{
+	return upnp->context_manager;
 }
