@@ -119,7 +119,7 @@ static void prv_context_free(void)
 		dleyna_settings_delete(g_context.settings);
 }
 
-int dleyna_main_loop_start(char *server,
+int dleyna_main_loop_start(const char *server,
 			   const dleyna_control_point_t *control_point,
 			   gpointer user_data)
 {
@@ -129,7 +129,7 @@ int dleyna_main_loop_start(char *server,
 	g_type_init();
 #endif
 
-	dleyna_log_init(server);
+	dleyna_log_init(server, control_point->get_version());
 
 	if (!prv_context_init(server, control_point))
 		goto out;

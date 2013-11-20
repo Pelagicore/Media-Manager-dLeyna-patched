@@ -43,7 +43,13 @@ enum dls_interface_type_ {
 #define DLS_INTERFACE_MEDIA_OBJECT "org.gnome.UPnP.MediaObject2"
 #define DLS_INTERFACE_MEDIA_ITEM "org.gnome.UPnP.MediaItem2"
 
+#define DLS_INTERFACE_PROP_ERROR "Error"
+#define DLS_INTERFACE_PROP_ERROR_ID "ID"
+#define DLS_INTERFACE_PROP_ERROR_NAME "Name"
+#define DLS_INTERFACE_PROP_ERROR_MESSAGE "Message"
+
 /* Manager Properties */
+#define DLS_INTERFACE_PROP_NEVER_QUIT "NeverQuit"
 #define DLS_INTERFACE_PROP_WHITE_LIST_ENTRIES "WhiteListEntries"
 #define DLS_INTERFACE_PROP_WHITE_LIST_ENABLED "WhiteListEnabled"
 
@@ -118,6 +124,11 @@ enum dls_interface_type_ {
 /* Evented State Variable Properties */
 #define DLS_INTERFACE_PROP_ESV_SYSTEM_UPDATE_ID "SystemUpdateID"
 
+/* Changed event properties */
+#define DLS_INTERFACE_PROP_CHANGE_TYPE "ChangeType"
+#define DLS_INTERFACE_PROP_UPDATE_ID "UpdateID"
+#define DLS_INTERFACE_PROP_SUBTREE_UPDATE "SubTreeUpdate"
+
 #define DLS_INTERFACE_GET_VERSION "GetVersion"
 #define DLS_INTERFACE_GET_SERVERS "GetServers"
 #define DLS_INTERFACE_RESCAN "Rescan"
@@ -147,10 +158,11 @@ enum dls_interface_type_ {
 
 #define DLS_INTERFACE_GET "Get"
 #define DLS_INTERFACE_GET_ALL "GetAll"
+#define DLS_INTERFACE_SET "Set"
 #define DLS_INTERFACE_INTERFACE_NAME "InterfaceName"
 #define DLS_INTERFACE_PROPERTY_NAME "PropertyName"
 #define DLS_INTERFACE_PROPERTIES_VALUE "Properties"
-#define DLS_INTERFACE_VALUE "value"
+#define DLS_INTERFACE_VALUE "Value"
 #define DLS_INTERFACE_CHILD_TYPES "ChildTypes"
 
 #define DLS_INTERFACE_VERSION "Version"
@@ -175,8 +187,8 @@ enum dls_interface_type_ {
 #define DLS_INTERFACE_INVALIDATED_PROPERTIES "InvalidatedProperties"
 #define DLS_INTERFACE_ESV_CONTAINER_UPDATE_IDS "ContainerUpdateIDs"
 #define DLS_INTERFACE_CONTAINER_PATHS_ID "ContainerPathsIDs"
-#define DLS_INTERFACE_ESV_LAST_CHANGE "LastChange"
-#define DLS_INTERFACE_LAST_CHANGE_STATE_EVENT "StateEvent"
+#define DLS_INTERFACE_CHANGED_EVENT "Changed"
+#define DLS_INTERFACE_CHANGED_OBJECTS "ChangedObjects"
 
 #define DLS_INTERFACE_DELETE "Delete"
 
@@ -206,6 +218,9 @@ enum dls_interface_type_ {
 
 #define DLS_INTERFACE_GET_METADATA "GetMetaData"
 #define DLS_INTERFACE_METADATA "MetaData"
+
+#define DLS_INTERFACE_BROWSE_OBJECTS "BrowseObjects"
+#define DLS_INTERFACE_OBJECTS_PATH "Objects"
 
 #define DLS_INTERFACE_CREATE_REFERENCE "CreateReference"
 #define DLS_INTERFACE_REFPATH "RefPath"

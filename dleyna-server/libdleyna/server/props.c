@@ -1334,8 +1334,12 @@ static void prv_add_resources(GVariantBuilder *item_vb,
 	GVariant *val;
 
 	val = prv_compute_resources(object, filter_mask, all_res);
-	g_variant_builder_add(item_vb, "{sv}", DLS_INTERFACE_PROP_RESOURCES,
-			      val);
+
+	if (g_variant_n_children(val))
+		g_variant_builder_add(item_vb, "{sv}",
+				      DLS_INTERFACE_PROP_RESOURCES, val);
+	else
+		g_variant_unref(val);
 }
 
 gboolean dls_props_add_object(GVariantBuilder *item_vb,
@@ -1401,10 +1405,13 @@ gboolean dls_props_add_object(GVariantBuilder *item_vb,
 
 	if (filter_mask & DLS_UPNP_MASK_PROP_DLNA_MANAGED) {
 		flags = gupnp_didl_lite_object_get_dlna_managed(object);
-		prv_add_variant_prop(item_vb,
-				     DLS_INTERFACE_PROP_DLNA_MANAGED,
-				     prv_props_get_dlna_info_dict(
-						flags, g_prop_dlna_ocm));
+
+		if (flags != GUPNP_OCM_FLAGS_NONE)
+			prv_add_variant_prop(item_vb,
+					     DLS_INTERFACE_PROP_DLNA_MANAGED,
+					     prv_props_get_dlna_info_dict(
+							flags,
+							g_prop_dlna_ocm));
 	}
 
 	if ((filter_mask & DLS_UPNP_MASK_PROP_OBJECT_UPDATE_ID) &&
@@ -1433,6 +1440,7 @@ void dls_props_add_container(GVariantBuilder *item_vb,
 	gboolean searchable;
 	guint uint_val;
 	GUPnPDIDLLiteResource *res;
+	GVariant *val;
 	const char *str_val;
 
 	*have_child_count = FALSE;
@@ -1452,10 +1460,16 @@ void dls_props_add_container(GVariantBuilder *item_vb,
 				  searchable);
 	}
 
-	if (filter_mask & DLS_UPNP_MASK_PROP_CREATE_CLASSES)
-		prv_add_variant_prop(item_vb,
-				     DLS_INTERFACE_PROP_CREATE_CLASSES,
-				     prv_compute_create_classes(object));
+	if (filter_mask & DLS_UPNP_MASK_PROP_CREATE_CLASSES) {
+		val = prv_compute_create_classes(object);
+
+		if (g_variant_n_children(val))
+			prv_add_variant_prop(item_vb,
+					     DLS_INTERFACE_PROP_CREATE_CLASSES,
+					     val);
+		else
+			g_variant_unref(val);
+	}
 
 	if ((filter_mask & DLS_UPNP_MASK_PROP_CONTAINER_UPDATE_ID) &&
 	    gupnp_didl_lite_container_container_update_id_is_set(object)) {
@@ -1512,9 +1526,12 @@ void dls_props_add_item(GVariantBuilder *item_vb,
 
 	if (filter_mask & DLS_UPNP_MASK_PROP_ARTISTS) {
 		list = gupnp_didl_lite_object_get_artists(object);
-		prv_add_variant_prop(item_vb, DLS_INTERFACE_PROP_ARTISTS,
-				     prv_get_artists_prop(list));
-		g_list_free_full(list, g_object_unref);
+		if (list != NULL) {
+			prv_add_variant_prop(item_vb,
+					     DLS_INTERFACE_PROP_ARTISTS,
+					     prv_get_artists_prop(list));
+			g_list_free_full(list, g_object_unref);
+		}
 	}
 
 	if (filter_mask & DLS_UPNP_MASK_PROP_ALBUM)
@@ -2043,57 +2060,47 @@ on_error:
 	return retval;
 }
 
-static void prv_add_list_wl_entries(gpointer data, gpointer user_data)
+static GVariant *prv_build_wl_entries(dleyna_settings_t *settings)
 {
-	GVariantBuilder *vb = (GVariantBuilder *)user_data;
-	gchar *entry = (gchar *)data;
+	GVariant *result;
 
-	g_variant_builder_add(vb, "s",  entry);
+	result = dleyna_settings_white_list_entries(settings);
+
+	if (result == NULL)
+		result = g_variant_new("as", NULL);
+
+	return result;
 }
 
-void dls_props_add_manager(GUPnPContextManager *manager, GVariantBuilder *vb)
+void dls_props_add_manager(dleyna_settings_t *settings, GVariantBuilder *vb)
 {
-	GUPnPWhiteList *wl;
-	GList *list;
-	GVariantBuilder vb2;
-
-	wl = gupnp_context_manager_get_white_list(manager);
-	list = gupnp_white_list_get_entries(wl);
+	prv_add_bool_prop(vb, DLS_INTERFACE_PROP_NEVER_QUIT,
+			  dleyna_settings_is_never_quit(settings));
 
 	prv_add_bool_prop(vb, DLS_INTERFACE_PROP_WHITE_LIST_ENABLED,
-			  gupnp_white_list_get_enabled(wl));
-
-	g_variant_builder_init(&vb2, G_VARIANT_TYPE("as"));
-	g_list_foreach(list, prv_add_list_wl_entries, &vb2);
+			  dleyna_settings_is_white_list_enabled(settings));
 
 	g_variant_builder_add(vb, "{sv}", DLS_INTERFACE_PROP_WHITE_LIST_ENTRIES,
-			      g_variant_builder_end(&vb2));
+			      prv_build_wl_entries(settings));
 }
 
-GVariant *dls_props_get_manager_prop(GUPnPContextManager *manager,
+GVariant *dls_props_get_manager_prop(dleyna_settings_t *settings,
 				     const gchar *prop)
 {
 	GVariant *retval = NULL;
-	GUPnPWhiteList *wl;
-	GVariantBuilder vb;
-	GList *list;
 	gboolean b_value;
 #if DLEYNA_LOG_LEVEL & DLEYNA_LOG_LEVEL_DEBUG
 	gchar *prop_str;
 #endif
 
-	wl = gupnp_context_manager_get_white_list(manager);
-
-	if (!strcmp(prop, DLS_INTERFACE_PROP_WHITE_LIST_ENABLED)) {
-		b_value = gupnp_white_list_get_enabled(wl);
+	if (!strcmp(prop, DLS_INTERFACE_PROP_NEVER_QUIT)) {
+		b_value = dleyna_settings_is_never_quit(settings);
 		retval = g_variant_ref_sink(g_variant_new_boolean(b_value));
-
+	} else if (!strcmp(prop, DLS_INTERFACE_PROP_WHITE_LIST_ENABLED)) {
+		b_value = dleyna_settings_is_white_list_enabled(settings);
+		retval = g_variant_ref_sink(g_variant_new_boolean(b_value));
 	} else if (!strcmp(prop, DLS_INTERFACE_PROP_WHITE_LIST_ENTRIES)) {
-		list = gupnp_white_list_get_entries(wl);
-
-		g_variant_builder_init(&vb, G_VARIANT_TYPE("as"));
-		g_list_foreach(list, prv_add_list_wl_entries, &vb);
-		retval = g_variant_ref_sink(g_variant_builder_end(&vb));
+		retval = g_variant_ref_sink(prv_build_wl_entries(settings));
 	}
 
 #if DLEYNA_LOG_LEVEL & DLEYNA_LOG_LEVEL_DEBUG
@@ -2105,4 +2112,30 @@ GVariant *dls_props_get_manager_prop(GUPnPContextManager *manager,
 #endif
 
 	return retval;
+}
+
+GVariant *dls_props_get_error_prop(GError *error)
+{
+	GVariantBuilder gvb;
+
+	g_variant_builder_init(&gvb, G_VARIANT_TYPE("a{sv}"));
+
+	g_variant_builder_add(&gvb, "{sv}",
+			      DLS_INTERFACE_PROP_ERROR_ID,
+			      g_variant_new_int32(error->code));
+
+/* NOTE: We should modify the dleyna-connector API to add a new method to
+ *       retrieve the error string. Direct call to DBUS are forbidden.
+ *
+ *	g_variant_builder_add(&gvb, "{sv}",
+ *			      DLS_INTERFACE_PROP_ERROR_NAME,
+ *			      g_variant_new_string(
+ *				g_dbus_error_get_remote_error(cb_data->error)));
+*/
+
+	g_variant_builder_add(&gvb, "{sv}",
+			      DLS_INTERFACE_PROP_ERROR_MESSAGE,
+			      g_variant_new_string(error->message));
+
+	return g_variant_builder_end(&gvb);
 }

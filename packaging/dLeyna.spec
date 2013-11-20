@@ -1,6 +1,6 @@
 Name:       dleyna
 Summary:    dLeyna hosts a number of DLNA middleware components
-Version:    0.2.1
+Version:    0.4.0
 Release:    0
 Group:      System/Libraries
 License:    LGPLv2+

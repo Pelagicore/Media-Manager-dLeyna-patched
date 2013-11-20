@@ -29,6 +29,7 @@
 #include <libdleyna/core/error.h>
 #include <libdleyna/core/log.h>
 #include <libdleyna/core/task-processor.h>
+#include <libdleyna/core/white-list.h>
 
 #include "async.h"
 #include "client.h"
@@ -84,30 +85,18 @@ static const gchar g_root_introspection[] =
 	"      <arg type='b' name='"DLS_INTERFACE_PREFER"'"
 	"           direction='in'/>"
 	"    </method>"
-	"    <method name='"DLS_INTERFACE_WHITE_LIST_ENABLE"'>"
-	"      <arg type='b' name='"DLS_INTERFACE_IS_ENABLED"'"
-	"           direction='in'/>"
-	"    </method>"
-	"    <method name='"DLS_INTERFACE_WHITE_LIST_ADD_ENTRIES"'>"
-	"      <arg type='as' name='"DLS_INTERFACE_ENTRY_LIST"'"
-	"           direction='in'/>"
-	"    </method>"
-	"    <method name='"DLS_INTERFACE_WHITE_LIST_REMOVE_ENTRIES"'>"
-	"      <arg type='as' name='"DLS_INTERFACE_ENTRY_LIST"'"
-	"           direction='in'/>"
-	"    </method>"
-	"    <method name='"DLS_INTERFACE_WHITE_LIST_CLEAR"'>"
-	"    </method>"
 	"    <signal name='"DLS_INTERFACE_FOUND_SERVER"'>"
 	"      <arg type='o' name='"DLS_INTERFACE_PATH"'/>"
 	"    </signal>"
 	"    <signal name='"DLS_INTERFACE_LOST_SERVER"'>"
 	"      <arg type='o' name='"DLS_INTERFACE_PATH"'/>"
 	"    </signal>"
+	"    <property type='as' name='"DLS_INTERFACE_PROP_NEVER_QUIT"'"
+	"       access='readwrite'/>"
 	"    <property type='as' name='"DLS_INTERFACE_PROP_WHITE_LIST_ENTRIES"'"
-	"       access='read'/>"
+	"       access='readwrite'/>"
 	"    <property type='b' name='"DLS_INTERFACE_PROP_WHITE_LIST_ENABLED"'"
-	"       access='read'/>"
+	"       access='readwrite'/>"
 	"  </interface>"
 	"  <interface name='"DLS_INTERFACE_PROPERTIES"'>"
 	"    <method name='"DLS_INTERFACE_GET"'>"
@@ -123,6 +112,14 @@ static const gchar g_root_introspection[] =
 	"           direction='in'/>"
 	"      <arg type='a{sv}' name='"DLS_INTERFACE_PROPERTIES_VALUE"'"
 	"           direction='out'/>"
+	"    </method>"
+	"    <method name='"DLS_INTERFACE_SET"'>"
+	"      <arg type='s' name='"DLS_INTERFACE_INTERFACE_NAME"'"
+	"           direction='in'/>"
+	"      <arg type='s' name='"DLS_INTERFACE_PROPERTY_NAME"'"
+	"           direction='in'/>"
+	"      <arg type='v' name='"DLS_INTERFACE_VALUE"'"
+	"           direction='in'/>"
 	"    </method>"
 	"    <signal name='"DLS_INTERFACE_PROPERTIES_CHANGED"'>"
 	"      <arg type='s' name='"DLS_INTERFACE_INTERFACE_NAME"'/>"
@@ -453,6 +450,14 @@ static const gchar g_server_introspection[] =
 	"      <arg type='s' name='"DLS_INTERFACE_MIME_TYPE"'"
 	"           direction='out'/>"
 	"    </method>"
+	"    <method name='"DLS_INTERFACE_BROWSE_OBJECTS"'>"
+	"      <arg type='ao' name='"DLS_INTERFACE_OBJECTS_PATH"'"
+	"           direction='in'/>"
+	"      <arg type='as' name='"DLS_INTERFACE_FILTER"'"
+	"           direction='in'/>"
+	"      <arg type='aa{sv}' name='"DLS_INTERFACE_CHILDREN"'"
+	"           direction='out'/>"
+	"    </method>"
 	"    <property type='s' name='"DLS_INTERFACE_PROP_LOCATION"'"
 	"       access='read'/>"
 	"    <property type='s' name='"DLS_INTERFACE_PROP_UDN"'"
@@ -505,9 +510,8 @@ static const gchar g_server_introspection[] =
 	"    <signal name='"DLS_INTERFACE_ESV_CONTAINER_UPDATE_IDS"'>"
 	"      <arg type='a(ou)' name='"DLS_INTERFACE_CONTAINER_PATHS_ID"'/>"
 	"    </signal>"
-	"    <signal name='"DLS_INTERFACE_ESV_LAST_CHANGE"'>"
-	"      <arg type='a(sv)' name='"
-	DLS_INTERFACE_LAST_CHANGE_STATE_EVENT"'/>"
+	"    <signal name='"DLS_INTERFACE_CHANGED_EVENT"'>"
+	"      <arg type='aa{sv}' name='"DLS_INTERFACE_CHANGED_OBJECTS"'/>"
 	"    </signal>"
 	"    <signal name='"DLS_INTERFACE_UPLOAD_UPDATE"'>"
 	"      <arg type='u' name='"DLS_INTERFACE_UPLOAD_ID"'/>"
@@ -586,22 +590,6 @@ static void prv_process_sync_task(dls_task_t *task)
 	case DLS_TASK_CANCEL_UPLOAD:
 		dls_upnp_cancel_upload(g_context.upnp, task);
 		break;
-	case DLS_TASK_WHITE_LIST_ENABLE:
-		dls_manager_wl_enable(task);
-		dls_task_complete(task);
-		break;
-	case DLS_TASK_WHITE_LIST_ADD_ENTRIES:
-		dls_manager_wl_add_entries(task);
-		dls_task_complete(task);
-		break;
-	case DLS_TASK_WHITE_LIST_REMOVE_ENTRIES:
-		dls_manager_wl_remove_entries(task);
-		dls_task_complete(task);
-		break;
-	case DLS_TASK_WHITE_LIST_CLEAR:
-		dls_manager_wl_clear(task);
-		dls_task_complete(task);
-		break;
 	default:
 		goto finished;
 		break;
@@ -643,12 +631,16 @@ static void prv_process_async_task(dls_task_t *task)
 
 	switch (task->type) {
 	case DLS_TASK_MANAGER_GET_PROP:
-		dls_manager_get_prop(g_context.manager, task,
-				     prv_async_task_complete);
+		dls_manager_get_prop(g_context.manager, g_context.settings,
+				     task, prv_async_task_complete);
 		break;
 	case DLS_TASK_MANAGER_GET_ALL_PROPS:
-		dls_manager_get_all_props(g_context.manager, task,
-					  prv_async_task_complete);
+		dls_manager_get_all_props(g_context.manager, g_context.settings,
+					  task, prv_async_task_complete);
+		break;
+	case DLS_TASK_MANAGER_SET_PROP:
+		dls_manager_set_prop(g_context.manager, g_context.settings,
+				     task, prv_async_task_complete);
 		break;
 	case DLS_TASK_GET_CHILDREN:
 		dls_upnp_get_children(g_context.upnp, client, task,
@@ -665,6 +657,10 @@ static void prv_process_async_task(dls_task_t *task)
 	case DLS_TASK_SEARCH:
 		dls_upnp_search(g_context.upnp, client, task,
 				prv_async_task_complete);
+		break;
+	case DLS_TASK_BROWSE_OBJECTS:
+		dls_upnp_browse_objects(g_context.upnp, client, task,
+					prv_async_task_complete);
 		break;
 	case DLS_TASK_GET_RESOURCE:
 		dls_upnp_get_resource(g_context.upnp, client, task,
@@ -879,14 +875,6 @@ static void prv_manager_root_method_call(
 	} else if (!strcmp(method, DLS_INTERFACE_PREFER_LOCAL_ADDRESSES)) {
 		task = dls_task_prefer_local_addresses_new(invocation,
 							   parameters);
-	} else if (!strcmp(method, DLS_INTERFACE_WHITE_LIST_ENABLE)) {
-		task = dls_task_wl_enable_new(invocation, parameters);
-	} else if (!strcmp(method, DLS_INTERFACE_WHITE_LIST_ADD_ENTRIES)) {
-		task = dls_task_wl_add_entries_new(invocation, parameters);
-	} else if (!strcmp(method, DLS_INTERFACE_WHITE_LIST_REMOVE_ENTRIES)) {
-		task = dls_task_wl_remove_entries_new(invocation, parameters);
-	} else if (!strcmp(method, DLS_INTERFACE_WHITE_LIST_CLEAR)) {
-		task = dls_task_wl_clear_new(invocation);
 	} else {
 		goto finished;
 	}
@@ -914,6 +902,9 @@ static void prv_manager_props_method_call(dleyna_connector_id_t conn,
 						      parameters, &error);
 	else if (!strcmp(method, DLS_INTERFACE_GET))
 		task = dls_task_manager_get_prop_new(invocation, object,
+						     parameters, &error);
+	else if (!strcmp(method, DLS_INTERFACE_SET))
+		task = dls_task_manager_set_prop_new(invocation, object,
 						     parameters, &error);
 	else
 		goto finished;
@@ -1189,6 +1180,9 @@ static void prv_device_method_call(dleyna_connector_id_t conn,
 	} else if (!strcmp(method, DLS_INTERFACE_GET_ICON)) {
 		task = dls_task_get_icon_new(invocation, object, parameters,
 					     &error);
+	} else if (!strcmp(method, DLS_INTERFACE_BROWSE_OBJECTS)) {
+		task = dls_task_browse_objects_new(invocation, object,
+						   parameters, &error);
 	} else if (!strcmp(method, DLS_INTERFACE_CANCEL)) {
 		task = NULL;
 
@@ -1263,6 +1257,25 @@ dls_upnp_t *dls_server_get_upnp(void)
 	return g_context.upnp;
 }
 
+static void prv_white_list_init(void)
+{
+	gboolean enabled;
+	GVariant *entries;
+	dleyna_white_list_t *wl;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	enabled = dleyna_settings_is_white_list_enabled(g_context.settings);
+	entries = dleyna_settings_white_list_entries(g_context.settings);
+
+	wl = dls_manager_get_white_list(g_context.manager);
+
+	dleyna_white_list_enable(wl, enabled);
+	dleyna_white_list_add_entries(wl, entries);
+
+	DLEYNA_LOG_DEBUG("Exit");
+}
+
 static gboolean prv_control_point_start_service(
 					dleyna_connector_id_t connection)
 {
@@ -1287,12 +1300,13 @@ static gboolean prv_control_point_start_service(
 					      NULL);
 
 		g_context.manager = dls_manager_new(connection,
-			       dls_upnp_get_context_manager(g_context.upnp));
+						dls_upnp_get_context_manager(
+							g_context.upnp));
+
+		prv_white_list_init();
 	} else {
 		retval = FALSE;
 	}
-
-	dleyna_settings_init_white_list(g_context.settings);
 
 	return retval;
 }
@@ -1357,6 +1371,11 @@ static const gchar *prv_control_point_root_introspection(void)
 	return g_root_introspection;
 }
 
+static const gchar *prv_control_point_get_version(void)
+{
+	return VERSION;
+}
+
 static const dleyna_control_point_t g_control_point = {
 	prv_control_point_initialize,
 	prv_control_point_free,
@@ -1364,7 +1383,8 @@ static const dleyna_control_point_t g_control_point = {
 	prv_control_point_server_introspection,
 	prv_control_point_root_introspection,
 	prv_control_point_start_service,
-	prv_control_point_stop_service
+	prv_control_point_stop_service,
+	prv_control_point_get_version
 };
 
 const dleyna_control_point_t *dleyna_control_point_get_server(void)

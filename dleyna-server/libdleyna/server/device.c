@@ -98,6 +98,15 @@ struct prv_new_device_ct_t_ {
 	GHashTable *property_map;
 };
 
+enum prv_changed_event_type_t_ {
+	PRV_CHANGED_EVENT_ADD = 1,
+	PRV_CHANGED_EVENT_MOD,
+	PRV_CHANGED_EVENT_DEL,
+	PRV_CHANGED_EVENT_DONE,
+	PRV_CHANGED_EVENT_CONTAINER
+};
+typedef enum prv_changed_event_type_t_ prv_changed_event_type_t;
+
 static void prv_get_child_count(dls_async_task_t *cb_data,
 				dls_device_count_cb_t cb, const gchar *id);
 static void prv_retrieve_child_count_for_list(dls_async_task_t *cb_data);
@@ -118,6 +127,13 @@ static void prv_upload_job_delete(gpointer up);
 static void prv_get_sr_token_for_props(GUPnPServiceProxy *proxy,
 			     const dls_device_t *device,
 			     dls_async_task_t *cb_data);
+static void prv_browse_objects_end_action_cb(GUPnPServiceProxy *proxy,
+					     GUPnPServiceProxyAction *action,
+					     gpointer user_data);
+static GUPnPServiceProxyAction *prv_browse_objects_begin_action_cb(
+						dleyna_service_task_t *task,
+						GUPnPServiceProxy *proxy,
+						gboolean *failed);
 
 static void prv_object_builder_delete(void *dob)
 {
@@ -265,16 +281,19 @@ static void prv_last_change_decode(GUPnPCDSLastChangeEntry *entry,
 				   const char *root_path)
 {
 	GUPnPCDSLastChangeEvent event;
-	GVariant *state;
 	const char *object_id;
 	const char *parent_id;
 	const char *mclass;
 	const char *media_class;
-	char *key[] = {"ADD", "DEL", "MOD", "DONE"};
+	const char *media_class_ex;
 	char *parent_path;
 	char *path = NULL;
 	gboolean sub_update;
 	guint32 update_id;
+	GVariantBuilder *dict;
+	gboolean mod;
+
+	dict = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"));
 
 	object_id = gupnp_cds_last_change_entry_get_object_id(entry);
 	if (!object_id)
@@ -295,21 +314,79 @@ static void prv_last_change_decode(GUPnPCDSLastChangeEntry *entry,
 		if (!mclass)
 			goto on_error;
 
-		media_class = dls_props_upnp_class_to_media_spec_ex(mclass);
+		media_class = dls_props_upnp_class_to_media_spec(mclass);
 		if (!media_class)
 			goto on_error;
 
+		media_class_ex = dls_props_upnp_class_to_media_spec_ex(mclass);
+
 		parent_path = dls_path_from_id(root_path, parent_id);
-		state = g_variant_new("(oubos)", path, update_id, sub_update,
-				      parent_path, media_class);
+
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_CHANGE_TYPE,
+				g_variant_new_uint32(PRV_CHANGED_EVENT_ADD));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_PATH,
+				g_variant_new_string(path));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_UPDATE_ID,
+				g_variant_new_uint32(update_id));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_SUBTREE_UPDATE,
+				g_variant_new_boolean(sub_update));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_PARENT,
+				g_variant_new_string(parent_path));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_TYPE,
+				g_variant_new_string(media_class));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_TYPE_EX,
+				g_variant_new_string(media_class_ex));
+
 		g_free(parent_path);
 		break;
 	case GUPNP_CDS_LAST_CHANGE_EVENT_OBJECT_REMOVED:
 	case GUPNP_CDS_LAST_CHANGE_EVENT_OBJECT_MODIFIED:
-		state = g_variant_new("(oub)", path, update_id, sub_update);
+		mod = (event == GUPNP_CDS_LAST_CHANGE_EVENT_OBJECT_MODIFIED);
+		g_variant_builder_add(
+			dict, "{sv}",
+			DLS_INTERFACE_PROP_CHANGE_TYPE,
+			g_variant_new_uint32(mod ? PRV_CHANGED_EVENT_MOD :
+							PRV_CHANGED_EVENT_DEL));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_PATH,
+				g_variant_new_string(path));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_UPDATE_ID,
+				g_variant_new_uint32(update_id));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_SUBTREE_UPDATE,
+				g_variant_new_boolean(sub_update));
 		break;
 	case GUPNP_CDS_LAST_CHANGE_EVENT_ST_DONE:
-		state = g_variant_new("(ou)", path, update_id);
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_CHANGE_TYPE,
+				g_variant_new_uint32(PRV_CHANGED_EVENT_DONE));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_PATH,
+				g_variant_new_string(path));
+		g_variant_builder_add(
+				dict, "{sv}",
+				DLS_INTERFACE_PROP_UPDATE_ID,
+				g_variant_new_uint32(update_id));
 		break;
 	case GUPNP_CDS_LAST_CHANGE_EVENT_INVALID:
 	default:
@@ -317,10 +394,12 @@ static void prv_last_change_decode(GUPnPCDSLastChangeEntry *entry,
 		break;
 	}
 
-	g_variant_builder_add(array, "(sv)", key[event - 1], state);
+	g_variant_builder_add(array, "@a{sv}", g_variant_builder_end(dict));
+
 
 on_error:
 
+	g_variant_builder_unref(dict);
 	g_free(path);
 }
 
@@ -354,7 +433,7 @@ static void prv_last_change_cb(GUPnPServiceProxy *proxy,
 		goto on_error;
 	}
 
-	g_variant_builder_init(&array, G_VARIANT_TYPE("a(sv)"));
+	g_variant_builder_init(&array, G_VARIANT_TYPE("aa{sv}"));
 	next = list;
 	while (next) {
 		prv_last_change_decode(next->data, &array, device->path);
@@ -362,12 +441,12 @@ static void prv_last_change_cb(GUPnPServiceProxy *proxy,
 		next = g_list_next(next);
 	}
 
-	val = g_variant_new("(@a(sv))", g_variant_builder_end(&array));
+	val = g_variant_new("(@aa{sv})", g_variant_builder_end(&array));
 
 	(void) dls_server_get_connector()->notify(device->connection,
 					   device->path,
 					   DLEYNA_SERVER_INTERFACE_MEDIA_DEVICE,
-					   DLS_INTERFACE_ESV_LAST_CHANGE,
+					   DLS_INTERFACE_CHANGED_EVENT,
 					   val,
 					   NULL);
 
@@ -407,6 +486,44 @@ static void prv_build_container_update_array(const gchar *root_path,
 	g_strfreev(str_array);
 }
 
+static void prv_build_container_update_changed_array(const gchar *root_path,
+						     const gchar *value,
+						     GVariantBuilder *builder)
+{
+	gchar **str_array;
+	int pos = 0;
+	gchar *path;
+	guint id;
+	GVariantBuilder dict;
+
+	str_array = g_strsplit(value, ",", 0);
+
+	while (str_array[pos] && str_array[pos + 1]) {
+		g_variant_builder_init(&dict, G_VARIANT_TYPE("a{sv}"));
+
+		path = dls_path_from_id(root_path, str_array[pos++]);
+		id = atoi(str_array[pos++]);
+
+		g_variant_builder_add(
+			&dict, "{sv}",
+			DLS_INTERFACE_PROP_CHANGE_TYPE,
+			g_variant_new_uint32(PRV_CHANGED_EVENT_CONTAINER));
+		g_variant_builder_add(&dict, "{sv}",
+				      DLS_INTERFACE_PROP_PATH,
+				      g_variant_new_string(path));
+		g_variant_builder_add(&dict, "{sv}",
+				      DLS_INTERFACE_PROP_UPDATE_ID,
+				      g_variant_new_uint32(id));
+
+		g_variant_builder_add(builder, "@a{sv}",
+				      g_variant_builder_end(&dict));
+
+		g_free(path);
+	}
+
+	g_strfreev(str_array);
+}
+
 static void prv_container_update_cb(GUPnPServiceProxy *proxy,
 				    const char *variable,
 				    GValue *value,
@@ -429,6 +546,25 @@ static void prv_container_update_cb(GUPnPServiceProxy *proxy,
 				g_variant_new("(@a(ou))",
 					      g_variant_builder_end(&array)),
 				NULL);
+
+	if (!device->has_last_change) {
+		g_variant_builder_init(&array, G_VARIANT_TYPE("aa{sv}"));
+
+		prv_build_container_update_changed_array(
+						device->path,
+						g_value_get_string(value),
+						&array);
+
+		(void) dls_server_get_connector()->notify(
+					device->connection,
+					device->path,
+					DLEYNA_SERVER_INTERFACE_MEDIA_DEVICE,
+					DLS_INTERFACE_CHANGED_EVENT,
+					g_variant_new("(@aa{sv})",
+						      g_variant_builder_end(
+								      &array)),
+					NULL);
+	}
 }
 
 static void prv_system_update_cb(GUPnPServiceProxy *proxy,
@@ -869,6 +1005,9 @@ static void prv_get_search_capabilities_cb(GUPnPServiceProxy *proxy,
 
 	prv_get_capabilities_analyze(priv_t->property_map, result,
 				     &priv_t->dev->search_caps);
+
+	if (g_hash_table_lookup(priv_t->property_map, "upnp:objectUpdateID"))
+		priv_t->dev->has_last_change = TRUE;
 
 on_error:
 
@@ -1401,7 +1540,7 @@ static void prv_get_item(GUPnPDIDLLiteParser *parser,
 	if (!GUPNP_IS_DIDL_LITE_CONTAINER(object))
 		dls_props_add_item(cb_task_data->vb, object,
 				   cb_data->task.target.root_path,
-				   DLS_UPNP_MASK_ALL_PROPS,
+				   cb_task_data->filter_mask,
 				   cb_task_data->protocol_info);
 	else
 		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
@@ -1420,7 +1559,7 @@ static void prv_get_container(GUPnPDIDLLiteParser *parser,
 	if (GUPNP_IS_DIDL_LITE_CONTAINER(object)) {
 		dls_props_add_container(cb_task_data->vb,
 					(GUPnPDIDLLiteContainer *)object,
-					DLS_UPNP_MASK_ALL_PROPS,
+					cb_task_data->filter_mask,
 					cb_task_data->protocol_info,
 					&have_child_count);
 		if (!have_child_count)
@@ -1461,7 +1600,7 @@ static void prv_get_object(GUPnPDIDLLiteParser *parser,
 
 	if (!dls_props_add_object(cb_task_data->vb, object,
 				  cb_data->task.target.root_path,
-				  parent_path, DLS_UPNP_MASK_ALL_PROPS))
+				  parent_path, cb_task_data->filter_mask))
 		goto on_error;
 
 	g_free(path);
@@ -1491,7 +1630,7 @@ static void prv_get_all(GUPnPDIDLLiteParser *parser,
 			dls_props_add_container(
 				cb_task_data->vb,
 				(GUPnPDIDLLiteContainer *)
-				object, DLS_UPNP_MASK_ALL_PROPS,
+				object, cb_task_data->filter_mask,
 				cb_task_data->protocol_info,
 				&have_child_count);
 			if (!have_child_count)
@@ -1500,7 +1639,7 @@ static void prv_get_all(GUPnPDIDLLiteParser *parser,
 			dls_props_add_item(cb_task_data->vb,
 					   object,
 					   cb_data->task.target.root_path,
-					   DLS_UPNP_MASK_ALL_PROPS,
+					   cb_task_data->filter_mask,
 					   cb_task_data->protocol_info);
 		}
 	}
@@ -2819,6 +2958,459 @@ static void prv_get_resource(GUPnPDIDLLiteParser *parser,
 	dls_props_add_resource(cb_task_data->vb, object,
 			       cb_task_data->filter_mask,
 			       task_data->protocol_info);
+}
+
+static void prv_browse_objects_add_error_result(dls_async_browse_objects_t *bo,
+						const gchar *path,
+						GError *error)
+{
+	GVariantBuilder evb;
+	GVariant *gv_result;
+
+	DLEYNA_LOG_WARNING("%s: %s", path, error->message);
+
+	g_variant_builder_init(&evb, G_VARIANT_TYPE("a{sv}"));
+
+	if (bo->get_all.filter_mask & DLS_UPNP_MASK_PROP_PATH)
+		g_variant_builder_add(
+			&evb, "{sv}", DLS_INTERFACE_PROP_PATH,
+			g_variant_new_object_path(path));
+
+	gv_result = dls_props_get_error_prop(error);
+
+	g_variant_builder_add(&evb, "{sv}",
+			      DLS_INTERFACE_PROP_ERROR, gv_result);
+
+	gv_result = g_variant_builder_end(&evb);
+
+	g_variant_builder_add(bo->avb, "@a{sv}", gv_result);
+}
+
+static void prv_get_child_count_end_action_cb(GUPnPServiceProxy *proxy,
+					      GUPnPServiceProxyAction *action,
+					      gpointer user_data)
+{
+	GError *error = NULL;
+	const gchar *message;
+	guint count = G_MAXUINT32;
+	gboolean end;
+	dls_async_browse_objects_t *cb_task_data;
+	dls_async_task_t *cb_data = user_data;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	end = gupnp_service_proxy_end_action(proxy, action, &error,
+					     "TotalMatches", G_TYPE_UINT,
+					     &count, NULL);
+
+	cb_task_data = &((dls_async_task_t *)user_data)->ut.browse_objects;
+
+	if (!end || (count == G_MAXUINT32)) {
+		message = (error != NULL) ? error->message : "Invalid result";
+		DLEYNA_LOG_WARNING("Browse operation failed: %s", message);
+
+		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
+					     DLEYNA_ERROR_OPERATION_FAILED,
+					     "Browse operation failed: %s",
+					     message);
+		goto on_complete;
+	}
+
+	g_variant_builder_add(cb_task_data->get_all.vb, "{sv}",
+			      DLS_INTERFACE_PROP_CHILD_COUNT,
+			      g_variant_new_uint32(count));
+
+	g_variant_builder_add(cb_task_data->avb, "@a{sv}",
+			      g_variant_builder_end(cb_task_data->get_all.vb));
+
+	DLEYNA_LOG_DEBUG("Child Count: %u", count);
+
+on_complete:
+
+	if (cb_data->error != NULL) {
+		message = cb_task_data->objects_id[cb_task_data->index - 1];
+		prv_browse_objects_add_error_result(cb_task_data, message,
+						    cb_data->error);
+		g_error_free(cb_data->error);
+		cb_data->error = NULL;
+	}
+
+	if (cb_task_data->get_all.vb != NULL) {
+		g_variant_builder_unref(cb_task_data->get_all.vb);
+		cb_task_data->get_all.vb = NULL;
+	}
+
+	if (cb_task_data->index < cb_task_data->object_count)
+		dleyna_service_task_add(cb_task_data->queue_id,
+					prv_browse_objects_begin_action_cb,
+					proxy,
+					prv_browse_objects_end_action_cb,
+					NULL, user_data);
+
+	if (error)
+		g_error_free(error);
+
+	DLEYNA_LOG_DEBUG("Exit");
+}
+
+static GUPnPServiceProxyAction *prv_get_child_count_begin_action_cb(
+						dleyna_service_task_t *task,
+						GUPnPServiceProxy *proxy,
+						gboolean *failed)
+{
+	GUPnPServiceProxyAction *action;
+	dls_task_t *user_data;
+	const gchar *path;
+	gchar *root_path = NULL;
+	gchar *id = NULL;
+	dls_async_browse_objects_t *cb_task_data;
+	GError *error = NULL;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	user_data = (dls_task_t *)dleyna_service_task_get_user_data(task);
+	cb_task_data = &((dls_async_task_t *)user_data)->ut.browse_objects;
+	path = cb_task_data->objects_id[cb_task_data->index - 1];
+
+	/* Should never fail. Error already managed in previous browse */
+	(void) dls_path_get_path_and_id(path, &root_path, &id, &error);
+
+	if (error != NULL)
+		goto exit;
+
+	action =  gupnp_service_proxy_begin_action(
+			proxy, "Browse",
+			dleyna_service_task_begin_action_cb, task,
+			"ObjectID", G_TYPE_STRING, id,
+			"BrowseFlag", G_TYPE_STRING, "BrowseDirectChildren",
+			"Filter", G_TYPE_STRING, "",
+			"StartingIndex", G_TYPE_INT, 0,
+			"RequestedCount", G_TYPE_INT, 1,
+			"SortCriteria", G_TYPE_STRING, "",
+			NULL);
+
+	g_free(root_path);
+	g_free(id);
+
+exit:
+	*failed = FALSE;
+
+	if (error != NULL) {
+		DLEYNA_LOG_WARNING("%s: %s", path, error->message);
+		action = NULL;
+
+		prv_browse_objects_add_error_result(cb_task_data, path, error);
+
+		if (cb_task_data->get_all.vb != NULL) {
+			g_variant_builder_unref(cb_task_data->get_all.vb);
+			cb_task_data->get_all.vb = NULL;
+		}
+
+		if (cb_task_data->index < cb_task_data->object_count)
+			dleyna_service_task_add(
+					cb_task_data->queue_id,
+					prv_browse_objects_begin_action_cb,
+					proxy,
+					prv_browse_objects_end_action_cb,
+					NULL, user_data);
+		g_error_free(error);
+	}
+
+	return action;
+}
+
+static void prv_browse_objects_end_action_cb(GUPnPServiceProxy *proxy,
+					     GUPnPServiceProxyAction *action,
+					     gpointer user_data)
+{
+	GError *error = NULL;
+	dls_async_task_t *cb_data = user_data;
+	dls_async_browse_objects_t *cb_task_data = &cb_data->ut.browse_objects;
+	dls_async_get_all_t *cb_all_data = &cb_data->ut.browse_objects.get_all;
+	GUPnPDIDLLiteParser *parser = NULL;
+	gchar *result = NULL;
+	const gchar *message;
+	gboolean end;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	end = gupnp_service_proxy_end_action(proxy, action, &error,
+					     "Result", G_TYPE_STRING, &result,
+					     NULL);
+
+	if (!end || (result == NULL)) {
+		message = (error != NULL) ? error->message : "Invalid result";
+		DLEYNA_LOG_WARNING("Browse Object operation failed: %s",
+				   message);
+
+		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
+					     DLEYNA_ERROR_OPERATION_FAILED,
+					     "Browse operation failed: %s",
+					     message);
+		goto on_exit;
+	}
+
+	DLEYNA_LOG_DEBUG_NL();
+	DLEYNA_LOG_DEBUG("Result: %s", result);
+	DLEYNA_LOG_DEBUG_NL();
+
+	cb_all_data->vb = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"));
+
+	parser = gupnp_didl_lite_parser_new();
+
+	g_signal_connect(parser, "object-available",
+			 G_CALLBACK(prv_get_all),
+			 cb_data);
+
+	if (!gupnp_didl_lite_parser_parse_didl(parser, result, &error)) {
+		if (error->code == GUPNP_XML_ERROR_EMPTY_NODE) {
+			DLEYNA_LOG_WARNING("Property not defined for object");
+
+			cb_data->error = g_error_new(
+						DLEYNA_SERVER_ERROR,
+						DLEYNA_ERROR_UNKNOWN_PROPERTY,
+						"Property not defined for object");
+		} else {
+			DLEYNA_LOG_WARNING(
+					"Unable to parse results of browse: %s",
+					error->message);
+
+			cb_data->error = g_error_new(
+						DLEYNA_SERVER_ERROR,
+						DLEYNA_ERROR_OPERATION_FAILED,
+						"Unable to parse results of browse: %s",
+						error->message);
+		}
+
+		goto on_exit;
+	}
+
+	if (cb_all_data->need_child_count &&
+	    (cb_all_data->filter_mask & DLS_UPNP_MASK_PROP_CHILD_COUNT)) {
+		DLEYNA_LOG_DEBUG("Need Child Count");
+		dleyna_service_task_add(cb_task_data->queue_id,
+					prv_get_child_count_begin_action_cb,
+					cb_data->proxy,
+					prv_get_child_count_end_action_cb,
+					NULL, cb_data);
+		goto no_complete;
+	}
+
+	g_variant_builder_add(cb_task_data->avb, "@a{sv}",
+			      g_variant_builder_end(cb_all_data->vb));
+
+on_exit:
+
+	if (cb_data->error != NULL) {
+		message = cb_task_data->objects_id[cb_task_data->index - 1];
+		prv_browse_objects_add_error_result(cb_task_data, message,
+						    cb_data->error);
+		g_error_free(cb_data->error);
+		cb_data->error = NULL;
+	}
+
+	if (cb_all_data->vb != NULL) {
+		g_variant_builder_unref(cb_all_data->vb);
+		cb_all_data->vb = NULL;
+	}
+
+	if (cb_task_data->index < cb_task_data->object_count)
+		dleyna_service_task_add(cb_task_data->queue_id,
+					prv_browse_objects_begin_action_cb,
+					cb_data->proxy,
+					prv_browse_objects_end_action_cb,
+					NULL, cb_data);
+no_complete:
+
+	if (parser)
+		g_object_unref(parser);
+
+	if (error)
+		g_error_free(error);
+
+	g_free(result);
+
+	DLEYNA_LOG_DEBUG("Exit");
+}
+
+static GUPnPServiceProxyAction *prv_browse_objects_begin_action_cb(
+						dleyna_service_task_t *task,
+						GUPnPServiceProxy *proxy,
+						gboolean *failed)
+{
+	GUPnPServiceProxyAction *action;
+	dls_task_t *user_data;
+	dls_async_browse_objects_t *cb_task_data;
+	const gchar *path;
+	gchar *root_path = NULL;
+	gchar *id = NULL;
+	GError *error = NULL;
+
+	DLEYNA_LOG_DEBUG("Enter called");
+
+	user_data = (dls_task_t *)dleyna_service_task_get_user_data(task);
+	cb_task_data = &((dls_async_task_t *)user_data)->ut.browse_objects;
+	path = cb_task_data->objects_id[cb_task_data->index];
+
+	/* Reset dynamic field. */
+	cb_task_data->get_all.need_child_count = FALSE;
+
+	/* Process anyway. We will add an entry with error */
+	(void) dls_path_get_path_and_id(path, &root_path, &id, &error);
+
+	if (error != NULL)
+		goto exit;
+
+	DLEYNA_LOG_DEBUG("Browse Metadata for path [id]: %s [%s]", path, id);
+
+	action = gupnp_service_proxy_begin_action(
+			proxy, "Browse",
+			dleyna_service_task_begin_action_cb, task,
+			"ObjectID", G_TYPE_STRING, id,
+			"BrowseFlag", G_TYPE_STRING, "BrowseMetadata",
+			"Filter", G_TYPE_STRING, cb_task_data->upnp_filter,
+			"StartingIndex", G_TYPE_INT, 0,
+			"RequestedCount", G_TYPE_INT, 0,
+			"SortCriteria", G_TYPE_STRING, "", NULL);
+
+	g_free(root_path);
+	g_free(id);
+
+exit:
+	*failed = FALSE;
+
+	/* It's the ONLY place where index is incremented */
+	cb_task_data->index++;
+
+	if (error != NULL) {
+		DLEYNA_LOG_WARNING("%s: %s", path, error->message);
+
+		prv_browse_objects_add_error_result(cb_task_data, path, error);
+		action = NULL;
+		g_error_free(error);
+
+		if (cb_task_data->index < cb_task_data->object_count)
+			dleyna_service_task_add(
+					cb_task_data->queue_id,
+					prv_browse_objects_begin_action_cb,
+					proxy,
+					prv_browse_objects_end_action_cb,
+					NULL, user_data);
+	}
+
+	return action;
+}
+
+static void prv_browse_objects_chain_cancelled(GCancellable *cancellable,
+					       gpointer user_data)
+{
+	dls_async_task_t *cb_data = user_data;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	dleyna_task_processor_cancel_queue(cb_data->ut.browse_objects.queue_id);
+	dls_async_task_cancelled_cb(cancellable, user_data);
+
+	DLEYNA_LOG_DEBUG("Exit");
+}
+
+static void prv_browse_objects_chain_end(gboolean cancelled, gpointer data)
+{
+	dls_task_t *task = (dls_task_t *)data;
+	dls_async_task_t *cb_data = (dls_async_task_t *)task;
+	dls_async_browse_objects_t *cb_task_data = &cb_data->ut.browse_objects;
+
+	DLEYNA_LOG_DEBUG("Enter");
+
+	if (!cancelled)
+		cb_data->task.result = g_variant_ref_sink(
+						g_variant_builder_end(
+							cb_task_data->avb));
+	else if (cb_data->error == NULL)
+		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
+					     DLEYNA_ERROR_CANCELLED,
+					     "Operation cancelled.");
+
+	(void) g_idle_add(dls_async_task_complete, cb_data);
+	g_cancellable_disconnect(cb_data->cancellable, cb_data->cancel_id);
+
+	DLEYNA_LOG_DEBUG("Exit");
+}
+
+void dls_device_browse_objects(dls_client_t *client, dls_task_t *task)
+{
+	const dleyna_task_queue_key_t *queue_id;
+	dls_async_task_t *cb_data = (dls_async_task_t *)task;
+	dls_async_browse_objects_t *cb_task_data;
+	dls_device_context_t *context;
+	const gchar **objs;
+	gsize length;
+	guint i;
+	gboolean path_ok;
+	const char *message;
+
+	DLEYNA_LOG_DEBUG("Root Path %s", task->target.root_path)
+
+	objs = g_variant_get_objv(task->ut.browse_objects.objects, &length);
+
+	path_ok = (length > 0);
+
+	for (i = 0; (i < length) && path_ok; i++)
+		path_ok = g_str_has_prefix(objs[i], task->target.root_path);
+
+	if (!path_ok) {
+		g_free(objs);
+
+		message = (length > 0) ? "At least one root path is invalid."
+				       : "Object path array is empty";
+
+		cb_data->error = g_error_new(DLEYNA_SERVER_ERROR,
+					     DLEYNA_ERROR_BAD_PATH,
+					     "%s", message);
+		goto on_error;
+	}
+
+	queue_id = dleyna_task_processor_add_queue(
+			dls_server_get_task_processor(),
+			dleyna_service_task_create_source(),
+			DLS_SERVER_SINK,
+			DLEYNA_TASK_QUEUE_FLAG_AUTO_REMOVE,
+			dleyna_service_task_process_cb,
+			dleyna_service_task_cancel_cb,
+			dleyna_service_task_delete_cb);
+
+	dleyna_task_queue_set_finally(queue_id, prv_browse_objects_chain_end);
+	dleyna_task_queue_set_user_data(queue_id, task);
+
+	context = dls_device_get_context(task->target.device, client);
+	cb_data->proxy = context->service_proxy;
+
+	cb_task_data = &cb_data->ut.browse_objects;
+	cb_task_data->queue_id = queue_id;
+	cb_task_data->avb = g_variant_builder_new(G_VARIANT_TYPE("aa{sv}"));
+	cb_task_data->objects_id = objs;
+	cb_task_data->object_count = length;
+
+	g_object_add_weak_pointer((G_OBJECT(context->service_proxy)),
+				  (gpointer *)&cb_data->proxy);
+
+	cb_data->cancel_id = g_cancellable_connect(
+				cb_data->cancellable,
+				G_CALLBACK(prv_browse_objects_chain_cancelled),
+				cb_data, NULL);
+
+	dleyna_service_task_add(queue_id,
+				prv_browse_objects_begin_action_cb,
+				cb_data->proxy,
+				prv_browse_objects_end_action_cb,
+				NULL, cb_data);
+
+	dleyna_task_queue_start(queue_id);
+
+on_error:
+
+	if (cb_data->error != NULL)
+		(void) g_idle_add(dls_async_task_complete, cb_data);
 }
 
 void dls_device_get_resource(dls_client_t *client,

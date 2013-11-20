@@ -63,6 +63,7 @@ struct dls_device_t_ {
 	GVariant *sort_ext_caps;
 	GVariant *feature_list;
 	gboolean shutting_down;
+	gboolean has_last_change;
 	guint construct_step;
 	dls_device_icon_t icon;
 };
@@ -112,6 +113,8 @@ void dls_device_search(dls_client_t *client,
 		       dls_task_t *task,
 		       const gchar *upnp_filter, const gchar *upnp_query,
 		       const gchar *sort_by);
+
+void dls_device_browse_objects(dls_client_t *client, dls_task_t *task);
 
 void dls_device_get_resource(dls_client_t *client,
 			     dls_task_t *task,
